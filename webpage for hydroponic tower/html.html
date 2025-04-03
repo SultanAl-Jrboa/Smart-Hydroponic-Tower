@@ -1,0 +1,299 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Smart Hydroponic System Dashboard</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    <style>
+        body {
+            background-image: url('back.png');
+            background-size: cover;
+            background-position: center;
+            background-repeat: no-repeat;
+            background-attachment: fixed;
+        }
+    </style>
+</head>
+<body class="min-h-screen flex flex-col items-center justify-center p-4">
+    <div class="w-full max-w-6xl mx-auto bg-white bg-opacity-95 rounded-2xl shadow-2xl overflow-hidden">
+        <div class="bg-gradient-to-r from-green-700 to-green-900 p-6">
+            <div class="flex justify-between items-center">
+                <h1 class="text-3xl font-bold text-white">Smart Hydroponic System Dashboard</h1>
+                <div class="text-white text-sm">
+                    <span id="current-time" class="font-mono">00:00:00</span>
+                    <span class="ml-4">| System Status: <span id="system-status" class="font-semibold text-green-300">Operational</span></span>
+                </div>
+            </div>
+        </div>
+
+        <div class="grid md:grid-cols-3 gap-6 p-6">
+            <div class="md:col-span-2 grid grid-cols-3 gap-4">
+                <!-- Sensor Cards with Enhanced Styling and Alerts -->
+                <div class="bg-green-50 p-4 rounded-lg shadow-md relative" id="tds-card">
+                    <div class="absolute top-2 right-2 text-xs text-gray-500">
+                        <span id="tds-status" class="font-semibold text-green-600">Normal</span>
+                    </div>
+                    <h3 class="text-sm text-gray-600 mb-2">TDS</h3>
+                    <div class="flex items-center justify-between">
+                        <span class="text-2xl font-bold text-green-800" id="tds">500</span>
+                        <span class="text-xs text-gray-500">ppm</span>
+                    </div>
+                </div>
+
+                <div class="bg-green-50 p-4 rounded-lg shadow-md relative" id="ph-card">
+                    <div class="absolute top-2 right-2 text-xs text-gray-500">
+                        <span id="ph-status" class="font-semibold text-green-600">Balanced</span>
+                    </div>
+                    <h3 class="text-sm text-gray-600 mb-2">pH Level</h3>
+                    <div class="flex items-center justify-between">
+                        <span class="text-2xl font-bold text-green-800" id="ph">6.5</span>
+                    </div>
+                </div>
+
+                <!-- Similar enhanced cards for other sensors -->
+                <div class="bg-green-50 p-4 rounded-lg shadow-md" id="water-temp-card">
+                    <h3 class="text-sm text-gray-600 mb-2">Water Temp</h3>
+                    <div class="flex items-center justify-between">
+                        <span class="text-2xl font-bold text-green-800" id="water-temp">22</span>
+                        <span class="text-xs text-gray-500">°C</span>
+                    </div>
+                </div>
+
+                <div class="bg-green-50 p-4 rounded-lg shadow-md" id="humidity-card">
+                    <h3 class="text-sm text-gray-600 mb-2">Humidity</h3>
+                    <div class="flex items-center justify-between">
+                        <span class="text-2xl font-bold text-green-800" id="humidity">60</span>
+                        <span class="text-xs text-gray-500">%</span>
+                    </div>
+                </div>
+
+                <div class="bg-green-50 p-4 rounded-lg shadow-md" id="temp-card">
+                    <h3 class="text-sm text-gray-600 mb-2">Ambient Temp</h3>
+                    <div class="flex items-center justify-between">
+                        <span class="text-2xl font-bold text-green-800" id="temp">25</span>
+                        <span class="text-xs text-gray-500">°C</span>
+                    </div>
+                </div>
+
+                <div class="bg-green-50 p-4 rounded-lg shadow-md flex flex-col justify-between">
+                    <h3 class="text-sm text-gray-600 mb-2">Nutrient Tank Level</h3>
+                    <div class="w-full h-24 border-2 border-green-600 rounded-lg relative overflow-hidden">
+                        <div id="water-level" class="absolute bottom-0 left-0 right-0 bg-green-400 transition-all duration-500" style="height: 80%;">
+                            <div class="absolute bottom-0 left-0 right-0 bg-green-500 opacity-50 h-4"></div>
+                        </div>
+                        <div class="absolute inset-0 flex items-center justify-center text-green-900 font-bold">
+                            80%
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="bg-green-50 rounded-lg p-4 flex flex-col justify-between">
+                <div>
+                    <h3 class="text-lg font-semibold text-gray-700 mb-4">System Controls</h3>
+                    <div class="space-y-4">
+                        <button id="led-btn" class="w-full py-3 bg-green-600 hover:bg-green-700 text-white font-semibold rounded-lg transition duration-300 ease-in-out transform hover:scale-105 flex items-center justify-center">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 mr-2" viewBox="0 0 20 20" fill="currentColor">
+                                <path d="M11 3a1 1 0 10-2 0v1a1 1 0 102 0V3zM15.657 5.757a1 1 0 00-1.414-1.414l-.707.707a1 1 0 001.414 1.414l.707-.707zM18 10a1 1 0 01-1 1h-1a1 1 0 110-2h1a1 1 0 011 1zM5.05 6.464A1 1 0 106.464 5.05l-.707-.707a1 1 0 00-1.414 1.414l.707.707zM5 10a1 1 0 01-1 1H3a1 1 0 110-2h1a1 1 0 011 1zm3 5a1 1 0 100-2H7a1 1 0 100 2h1zm5 3a1 1 0 100-2h-1a1 1 0 100 2h1z"/>
+                            </svg>
+                            LED Control
+                        </button>
+                        <button id="pump-btn" class="w-full py-3 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold rounded-lg transition duration-300 ease-in-out transform hover:scale-105 flex items-center justify-center">
+                            <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 mr-2" viewBox="0 0 20 20" fill="currentColor">
+                                <path fill-rule="evenodd" d="M11.3 1.046A1 1 0 0112 2v5h4a1 1 0 01.82 1.573l-7 10A1 1 0 018 18v-5H4a1 1 0 01-.82-1.573l7-10a1 1 0 011.12-.38z" clip-rule="evenodd"/>
+                            </svg>
+                            Pump Control
+                        </button>
+                    </div>
+                </div>
+                <div class="mt-4 text-sm text-gray-600">
+                    <p>Last System Check: <span id="last-check">2 mins ago</span></p>
+                    <p class="mt-1">Next Scheduled Check: <span id="next-check">10 mins</span></p>
+                </div>
+            </div>
+        </div>
+
+        <div class="p-6 bg-white border-t">
+            <h2 class="text-xl font-semibold text-gray-700 mb-4">Sensor Trends</h2>
+            <canvas id="sensorChart"></canvas>
+        </div>
+    </div>
+
+    <!-- Copyright Notice -->
+    <div class="w-full max-w-6xl mx-auto mt-4 mb-2 text-center">
+        <p class="text-white font-semibold text-lg bg-green-700 bg-opacity-50 py-2 px-4 rounded-lg inline-block">
+            Made by 
+            <a href="https://www.linkedin.com/in/sultanal-jrboa/" class="font-bold text-green-800">Sultan Al-Jarboa</a>
+        </p>
+    </div>
+    
+    
+
+    <script>
+        // Enhanced Real-time clock with date
+        function updateClock() {
+            const now = new Date();
+            const timeString = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+            const dateString = now.toLocaleDateString();
+            document.getElementById('current-time').textContent = `${timeString}`;
+        }
+        setInterval(updateClock, 1000);
+        updateClock();
+
+        // Sensor Validation and Status Checking
+        function validateSensorReadings() {
+            const sensors = {
+                tds: { value: parseFloat(document.getElementById('tds').textContent), 
+                       optimal: { min: 400, max: 600 } },
+                ph: { value: parseFloat(document.getElementById('ph').textContent), 
+                      optimal: { min: 5.5, max: 6.5 } },
+                waterTemp: { value: parseFloat(document.getElementById('water-temp').textContent), 
+                             optimal: { min: 20, max: 25 } }
+            };
+
+            Object.entries(sensors).forEach(([sensorName, sensor]) => {
+                const statusEl = document.getElementById(`${sensorName}-status`);
+                const cardEl = document.getElementById(`${sensorName}-card`);
+                
+                if (sensor.value < sensor.optimal.min || sensor.value > sensor.optimal.max) {
+                    statusEl.textContent = 'Alert';
+                    statusEl.classList.replace('text-green-600', 'text-red-600');
+                    cardEl.classList.add('border-2', 'border-red-300');
+                } else {
+                    statusEl.textContent = 'Normal';
+                    statusEl.classList.replace('text-red-600', 'text-green-600');
+                    cardEl.classList.remove('border-2', 'border-red-300');
+                }
+            });
+        }
+
+        // Simulated Data Update Function
+        function updateSensorData() {
+            // Simulating slight variations in sensor readings
+            const tdsValue = (500 + Math.floor(Math.random() * 50));
+            const phValue = (6.5 + (Math.random() - 0.5) * 0.5).toFixed(1);
+            const waterTempValue = (22 + (Math.random() - 0.5) * 2).toFixed(1);
+            const humidityValue = (60 + Math.floor(Math.random() * 5));
+            const ambientTempValue = (25 + (Math.random() - 0.5) * 2).toFixed(1);
+
+            document.getElementById('tds').textContent = tdsValue.toString();
+            document.getElementById('ph').textContent = phValue;
+            document.getElementById('water-temp').textContent = waterTempValue;
+            document.getElementById('humidity').textContent = humidityValue;
+            document.getElementById('temp').textContent = ambientTempValue;
+            
+            // Update chart with new data points
+            updateChartData(tdsValue, phValue, waterTempValue, humidityValue);
+            
+            validateSensorReadings();
+        }
+
+        // Chart Configuration
+        const ctx = document.getElementById('sensorChart').getContext('2d');
+        const sensorChart = new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: ['10:00', '10:01', '10:02', '10:03', '10:04'],
+                datasets: [
+                    { 
+                        label: 'TDS', 
+                        data: [500, 520, 510, 530, 540], 
+                        borderColor: 'rgba(22, 163, 74, 0.7)', 
+                        backgroundColor: 'rgba(22, 163, 74, 0.1)',
+                        tension: 0.4
+                    },
+                    { 
+                        label: 'pH', 
+                        data: [6.5, 6.6, 6.4, 6.5, 6.7], 
+                        borderColor: 'rgba(5, 150, 105, 0.7)', 
+                        backgroundColor: 'rgba(5, 150, 105, 0.1)',
+                        tension: 0.4
+                    },
+                    { 
+                        label: 'Water Temp', 
+                        data: [22, 23, 22, 21, 22], 
+                        borderColor: 'rgba(16, 185, 129, 0.7)', 
+                        backgroundColor: 'rgba(16, 185, 129, 0.1)',
+                        tension: 0.4
+                    },
+                    { 
+                        label: 'Humidity', 
+                        data: [60, 62, 61, 63, 64], 
+                        borderColor: 'rgba(52, 211, 153, 0.7)', 
+                        backgroundColor: 'rgba(52, 211, 153, 0.1)',
+                        tension: 0.4
+                    }
+                ]
+            },
+            options: {
+                responsive: true,
+                interaction: {
+                    mode: 'index',
+                    intersect: false
+                },
+                scales: {
+                    x: { 
+                        title: { 
+                            display: true, 
+                            text: 'Time' 
+                        }
+                    },
+                    y: { 
+                        beginAtZero: false,
+                        title: { 
+                            display: true, 
+                            text: 'Sensor Values' 
+                        }
+                    }
+                },
+                plugins: {
+                    legend: {
+                        position: 'bottom'
+                    }
+                }
+            }
+        });
+
+        // Function to update chart data
+        function updateChartData(tdsValue, phValue, waterTempValue, humidityValue) {
+            const chart = sensorChart;
+            
+            // Shift labels
+            chart.data.labels.shift();
+            chart.data.labels.push(new Date().toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'}));
+
+            // Update each dataset
+            chart.data.datasets[0].data.shift();
+            chart.data.datasets[0].data.push(tdsValue);
+
+            chart.data.datasets[1].data.shift();
+            chart.data.datasets[1].data.push(parseFloat(phValue));
+
+            chart.data.datasets[2].data.shift();
+            chart.data.datasets[2].data.push(parseFloat(waterTempValue));
+
+            chart.data.datasets[3].data.shift();
+            chart.data.datasets[3].data.push(humidityValue);
+
+            chart.update();
+        }
+
+        // Initial validation
+        validateSensorReadings();
+
+        // Update sensor data every minute
+        setInterval(updateSensorData, 60000);
+
+        // Event Listeners for System Controls
+        document.getElementById('led-btn').addEventListener('click', () => {
+            alert('LED Control Activated');
+        });
+
+        document.getElementById('pump-btn').addEventListener('click', () => {
+            alert('Pump Control Activated');
+        });
+    </script>
+</body>
+</html>
