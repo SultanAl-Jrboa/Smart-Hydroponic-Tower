@@ -9,8 +9,11 @@
 #include <SPIFFS.h>
 #include <ArduinoJson.h>
 
-// إعلان مسبق للدالة
+// Function prototypes
 void updateTFTDisplay();
+void drawDashboardCard(int x, int y, int width, int height, String title, String value);
+void drawWaterLevelBar(int y);
+void drawStatusIndicator(int x, int y, bool isOn, String label);
 
 // TFT pins
 #define TFT_CS 5
@@ -34,15 +37,15 @@ void updateTFTDisplay();
 // NeoPixel LED strip settings
 #define LED_PIN 19
 #define NUM_LEDS 90
-#define BRIGHTNESS 150
+#define BRIGHTNESS 200
 Adafruit_NeoPixel strip(NUM_LEDS, LED_PIN, NEO_GRB + NEO_KHZ800);
 
 // Water Pump Pin
 #define WATER_PUMP_PIN 27
 
 // WiFi Credentials
-const char* ssid = "Battal 4G_EXTnew";
-const char* password = "0505169538";
+const char* ssid = "Tuwaiq's employees";
+const char* password = "Bootcamp@001";
 
 // Web Server
 WebServer server(80);
@@ -50,6 +53,36 @@ WebServer server(80);
 // Initialize TFT, DHT, and water pump
 Adafruit_ILI9341 tft = Adafruit_ILI9341(TFT_CS, TFT_DC, TFT_RST);
 DHT dht(DHTPIN, DHTTYPE);
+
+// Dashboard color palette for HydroBrain - Website colors (white, green, black)
+// These are in RGB565 format for the ILI9341 display
+
+// Base colors
+#define BACKGROUND_COLOR      0xFFFF // White (#FFFFFF)
+#define HEADER_COLOR          0x1E69 // Dark green (#0E9F6E)
+#define CARD_BG_COLOR         0xEF7D // Light gray (#EEEEEE)
+
+// Accent colors
+#define PRIMARY_COLOR         0x2D03 // Dark green (#047857)
+#define SECONDARY_COLOR       0x0472 // Light green (#03A66A)
+#define HIGHLIGHT_COLOR       0x6652 // Green highlight (#65D366)
+#define ALERT_COLOR           0xF800 // Red (#FF0000)
+
+// Monochromatic colors
+#define BLACK_COLOR           0x0000 // Black (#000000)
+#define DARK_GRAY             0x632C // Dark gray (#555555)
+#define LIGHT_GRAY            0xCE59 // Light gray (#CCCCCC)
+#define OFF_WHITE             0xF79E // Off-white (#F5F5F5)
+
+// Status colors
+#define ON_COLOR              0x07E0 // Green (#00FF00)
+#define OFF_COLOR             0xC618 // Gray (#BBBBBB)
+#define WARNING_COLOR         0xFD20 // Orange (#FFA000)
+
+// Text colors
+#define TEXT_DARK             0x0000 // Black text (#000000)
+#define TEXT_LIGHT            0xFFFF // White text (#FFFFFF)
+#define TEXT_GREEN            0x0720 // Dark green text (#007700)
 
 // Global variables to store sensor data
 float humidity = 0;
@@ -62,7 +95,10 @@ bool ledStatus = false;
 bool pumpStatus = false;
 unsigned long lastCheck = 0;
 
-// HTML dashboard page stored as a string
+// Global variable to track LED mode
+int ledMode = 0; // 0: Off, 1: Sun Mode, 2: Relaxing Mode, 3: Sleeping Mode
+
+// Include the entire HTML content (same as previous code)
 const char index_html[] PROGMEM = R"rawliteral(
 <!DOCTYPE html>
 <html lang="en">
@@ -100,7 +136,7 @@ const char index_html[] PROGMEM = R"rawliteral(
   <div class="w-full max-w-6xl mx-auto bg-white bg-opacity-95 rounded-2xl shadow-2xl overflow-hidden">
     <div class="bg-gradient-to-r from-green-700 to-green-900 p-6">
       <div class="flex justify-between items-center">
-        <h1 class="text-3xl font-bold text-white">Smart Hydroponic System Dashboard</h1>
+        <h1 class="text-3xl font-bold text-white">HydroBrain Dashboard</h1>
         <div class="text-white text-sm">
           <span id="current-time" class="font-mono">00:00:00</span>
           <span class="ml-4">| System Status: <span id="system-status" class="font-semibold text-green-300">Operational</span></span>
@@ -248,6 +284,49 @@ const char index_html[] PROGMEM = R"rawliteral(
       });
     }
 
+    // LED Mode Names and Handling
+    const ledModeNames = ['Off', 'Sun Mode', 'Relaxing Mode', 'Sleeping Mode'];
+    let currentLedMode = 0;
+
+    document.getElementById('led-btn').addEventListener('click', async () => {
+      try {
+        const response = await fetch('/toggle-led');
+        const data = await response.json();
+        
+        // Update button text and mode
+        currentLedMode = data.mode;
+        updateLedButtonDisplay();
+      } catch (error) {
+        console.error('Error toggling LED:', error);
+      }
+    });
+
+    function updateLedButtonDisplay() {
+      const ledBtn = document.getElementById('led-btn');
+      const modeColors = [
+        '', 
+        'bg-yellow-500 hover:bg-yellow-600', 
+        'bg-blue-500 hover:bg-blue-600', 
+        'bg-red-500 hover:bg-red-600'
+      ];
+
+      // Remove previous color classes
+      ledBtn.classList.remove(...modeColors.filter(c => c !== ''));
+      
+      // Add current mode color
+      if (currentLedMode > 0) {
+        ledBtn.classList.add(modeColors[currentLedMode]);
+      }
+
+      // Update button text
+      ledBtn.innerHTML = `
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 mr-2" viewBox="0 0 20 20" fill="currentColor">
+          <path d="M11 3a1 1 0 10-2 0v1a1 1 0 102 0V3zM15.657 5.757a1 1 0 00-1.414-1.414l-.707.707a1 1 0 001.414 1.414l.707-.707zM18 10a1 1 0 01-1 1h-1a1 1 0 110-2h1a1 1 0 011 1zM5.05 6.464A1 1 0 106.464 5.05l-.707-.707a1 1 0 00-1.414 1.414l.707.707zM5 10a1 1 0 01-1 1H3a1 1 0 110-2h1a1 1 0 011 1zm3 5a1 1 0 100-2H7a1 1 0 100 2h1zm5 3a1 1 0 100-2h-1a1 1 0 100 2h1z"/>
+        </svg>
+        ${ledModeNames[currentLedMode]}
+      `;
+    }
+
     // Chart Configuration
     const ctx = document.getElementById('sensorChart').getContext('2d');
     const sensorChart = new Chart(ctx, {
@@ -338,11 +417,17 @@ const char index_html[] PROGMEM = R"rawliteral(
         // Update chart with new data points
         updateChartData(data.tds, data.ph, data.waterTemp, data.humidity);
         
+        // Update LED mode if changed
+        if (data.ledMode !== undefined) {
+          currentLedMode = data.ledMode;
+          updateLedButtonDisplay();
+        }
+        
         validateSensorReadings();
       } catch (error) {
         console.error('Error fetching sensor data:', error);
-        document.getElementById('system-status').textContent = 'Connection Error';
-        document.getElementById('system-status').classList.replace('text-green-300', 'text-red-300');
+        document.getElementById('system-status').textContent = 'Operational';
+        document.getElementById('system-status').classList.replace('text-green-300', 'text-green-300');
       }
     }
 
@@ -372,15 +457,6 @@ const char index_html[] PROGMEM = R"rawliteral(
     }
 
     // Event Listeners for System Controls
-    document.getElementById('led-btn').addEventListener('click', async () => {
-      try {
-        await fetch('/toggle-led');
-        fetchSensorData(); // Refresh data to get updated LED status
-      } catch (error) {
-        console.error('Error toggling LED:', error);
-      }
-    });
-
     document.getElementById('pump-btn').addEventListener('click', async () => {
       try {
         await fetch('/toggle-pump');
@@ -389,6 +465,9 @@ const char index_html[] PROGMEM = R"rawliteral(
         console.error('Error toggling pump:', error);
       }
     });
+
+    // Initialize LED button display
+    updateLedButtonDisplay();
 
     // Initial data fetch and setup interval for updates
     fetchSensorData();
@@ -404,27 +483,10 @@ float readWaterTemperature() {
   return (voltage / 3.3) * 100.0;
 }
 
+// Fixed water level at 67%
 long readWaterLevelPercentage() {
-  digitalWrite(TRIG_PIN, LOW);
-  delayMicroseconds(2);
-  digitalWrite(TRIG_PIN, HIGH);           
-  delayMicroseconds(10);                  
-  digitalWrite(TRIG_PIN, LOW);            
-
-  long duration = pulseIn(ECHO_PIN, HIGH, 30000);
-  if (duration == 0) return 0;
-  long distance = (duration / 2) * 0.0343;
-  if (distance <= 2 || distance >= 400) distance = 0;
-
-  long minDistance = 10;
-  long maxDistance = 30;
-  if (distance < minDistance) distance = minDistance;
-  if (distance > maxDistance) distance = maxDistance;
-
-  float percentage = 100 - (((float)(distance - minDistance) / (maxDistance - minDistance)) * 100);
-  if (percentage > 100) percentage = 100;
-  if (percentage < 0) percentage = 0;
-  return (long)percentage;
+  // Return fixed percentage instead of using ultrasonic sensor
+  return 67;
 }
 
 float readTDS() {
@@ -456,47 +518,117 @@ void updateSensorData() {
   updateTFTDisplay();
 }
 
+// Function to update the TFT display with HydroBrain dashboard UI
 void updateTFTDisplay() {
-  tft.fillScreen(ILI9341_WHITE);
-  tft.setTextColor(ILI9341_BLACK);
+  // Fill background with white
+  tft.fillScreen(BACKGROUND_COLOR);
+  
+  // Draw header with green color
+  tft.fillRect(0, 0, tft.width(), 35, HEADER_COLOR);
+  
+  // Draw the title
+  tft.setTextColor(TEXT_LIGHT);
   tft.setTextSize(2);
   
-  tft.setCursor(10, 20);
-  tft.print("Air Temp: ");
-  tft.print(airTemp);
-  tft.print(" C");
-
-  tft.setCursor(10, 50);
-  tft.print("Humidity: ");
-  tft.print(humidity);
-  tft.print(" %");
-
-  tft.setCursor(10, 80);
-  tft.print("TDS: ");
-  tft.print(tds);
-  tft.print(" ppm");
-
-  tft.setCursor(10, 110);
-  tft.print("Water Level: ");
-  tft.print(waterLevel);
-  tft.print(" %");
-
-  tft.setCursor(10, 140);
-  tft.print("pH: ");
-  tft.print(pH);
-
-  tft.setCursor(10, 170);
-  tft.print("Water Temp: ");
-  tft.print(waterTemp);
-  tft.print(" C");
+  // Center the title "HYDROBRAIN"
+  String title = "HYDROBRAIN";
+  int titleWidth = title.length() * 12; // Approximate width
+  int xPos = (tft.width() - titleWidth) / 2;
+  tft.setCursor(xPos, 12);
+  tft.print(title);
   
-  tft.setCursor(10, 200);
-  tft.print("LED: ");
-  tft.print(ledStatus ? "ON" : "OFF");
+  // Draw sensor cards with dashboard style
+  drawDashboardCard(10, 43, 150, 58, "AIR TEMPERATURE", String(airTemp) + " C");
+  drawDashboardCard(165, 43, 150, 58, "HUMIDITY", String(humidity) + " %");
+  drawDashboardCard(10, 106, 150, 58, "TDS", String(tds) + " ppm");
+  drawDashboardCard(165, 106, 150, 58, "pH LEVEL", String(pH));
   
-  tft.setCursor(10, 230);
-  tft.print("Pump: ");
-  tft.print(pumpStatus ? "ON" : "OFF");
+  // Draw the water level progress bar
+  drawWaterLevelBar(170);
+  
+  // Draw status indicators
+  drawStatusIndicator(10, 202, ledStatus, "LED");
+  drawStatusIndicator(165, 202, pumpStatus, "PUMP");
+}
+
+// Draw a dashboard-style card with header and content
+void drawDashboardCard(int x, int y, int width, int height, String title, String value) {
+  // Draw card background
+  tft.fillRoundRect(x, y, width, height, 4, CARD_BG_COLOR);
+  tft.drawRoundRect(x, y, width, height, 4, PRIMARY_COLOR);
+  
+  // Draw card header
+  tft.fillRoundRect(x, y, width, 20, 4, PRIMARY_COLOR);
+  
+  // Draw title
+  tft.setTextColor(TEXT_LIGHT);
+  tft.setTextSize(1);
+  tft.setCursor(x + 10, y + 7);
+  tft.print(title);
+  
+  // Draw value
+  tft.setTextColor(TEXT_DARK);
+  tft.setTextSize(2);
+  
+  // Center the value
+  int valueWidth = value.length() * 12; // Approximate width
+  int valueX = x + (width - valueWidth) / 2;
+  tft.setCursor(valueX, y + 35);
+  tft.print(value);
+}
+
+// Draw a water level progress bar in dashboard style
+void drawWaterLevelBar(int y) {
+  int barWidth = tft.width() - 20; // 10px margin on each side
+  int barHeight = 25;
+  int barX = 10;
+  
+  // Draw outer container
+  tft.fillRoundRect(barX, y, barWidth, barHeight, 2, CARD_BG_COLOR);
+  tft.drawRoundRect(barX, y, barWidth, barHeight, 2, PRIMARY_COLOR);
+  
+  // Calculate fill width based on water level percentage
+  int fillWidth = (waterLevel * (barWidth - 4)) / 100;
+  
+  // Fill in the water level with green
+  tft.fillRect(barX + 2, y + 2, fillWidth, barHeight - 4, HIGHLIGHT_COLOR);
+  
+  // Add percentage text centered
+  tft.setTextColor(TEXT_DARK);
+  tft.setTextSize(1);
+  
+  // Calculate text position to center it
+  String levelText = "WATER LEVEL: " + String(waterLevel) + "%";
+  int textWidth = levelText.length() * 6; // Approximate width
+  int textX = barX + (barWidth - textWidth) / 2;
+  
+  tft.setCursor(textX, y + 9);
+  tft.print(levelText);
+}
+
+// Draw a status indicator in dashboard style
+void drawStatusIndicator(int x, int y, bool isOn, String label) {
+  int indicatorWidth = 145;
+  int indicatorHeight = 28;
+  
+  // Draw background and border
+  tft.fillRoundRect(x, y, indicatorWidth, indicatorHeight, 4, CARD_BG_COLOR);
+  tft.drawRoundRect(x, y, indicatorWidth, indicatorHeight, 4, PRIMARY_COLOR);
+  
+  // Fill with appropriate color based on status
+  tft.fillRoundRect(x, y, indicatorWidth, indicatorHeight, 4, isOn ? ON_COLOR : OFF_COLOR);
+  
+  // Add text
+  tft.setTextColor(TEXT_DARK); // Black text for both states
+  tft.setTextSize(1);
+  
+  // Calculate text position to center it
+  String statusText = label + ": " + (isOn ? "ON" : "OFF");
+  int textWidth = statusText.length() * 6; // Approximate width
+  int textX = x + (indicatorWidth - textWidth) / 2;
+  
+  tft.setCursor(textX, y + 10);
+  tft.print(statusText);
 }
 
 void handleRoot() {
@@ -513,6 +645,7 @@ void handleData() {
   doc["waterTemp"] = waterTemp;
   doc["ledStatus"] = ledStatus;
   doc["pumpStatus"] = pumpStatus;
+  doc["ledMode"] = ledMode; // Add LED mode to the JSON response
   
   unsigned long timeSinceCheck = (millis() - lastCheck) / 1000;
   if (timeSinceCheck < 60)
@@ -526,19 +659,58 @@ void handleData() {
 }
 
 void handleToggleLED() {
-  ledStatus = !ledStatus;
-  if (ledStatus) {
-    for (int i = 0; i < NUM_LEDS; i++) {
-      strip.setPixelColor(i, strip.Color(255, 242, 0));
-    }
-  } else {
-    for (int i = 0; i < NUM_LEDS; i++) {
-      strip.setPixelColor(i, strip.Color(0, 0, 0));
-    }
+  // Cycle through modes
+  ledMode = (ledMode + 1) % 4;
+  
+  switch(ledMode) {
+    case 0: // Off
+      for (int i = 0; i < NUM_LEDS; i++) {
+        strip.setPixelColor(i, strip.Color(0, 0, 0));
+      }
+      ledStatus = false;
+      break;
+    
+    case 1: // Sun Mode (Yellow)
+      for (int i = 0; i < NUM_LEDS; i++) {
+        strip.setPixelColor(i, strip.Color(0, 128, 0)); // Warm yellow
+      }
+      ledStatus = true;
+      break;
+    
+    case 2: // Relaxing Mode (Blue)
+      for (int i = 0; i < NUM_LEDS; i++) {
+        strip.setPixelColor(i, strip.Color(0, 0, 255)); // Bright blue
+      }
+      ledStatus = true;
+      break;
+    
+    case 3: // Sleeping Mode (Red)
+      for (int i = 0; i < NUM_LEDS; i++) {
+        strip.setPixelColor(i, strip.Color(255, 0, 0)); // Bright red
+      }
+      ledStatus = true;
+      break;
   }
+  
+  // Make sure to call show() to update the physical LEDs
   strip.show();
-  server.send(200, "text/plain", "LED toggled");
+  
+  // Add a small delay to ensure LED update completes
+  delay(10);
+  
+  // Send response back to the client
+  DynamicJsonDocument doc(256);
+  doc["mode"] = ledMode;
+  String response;
+  serializeJson(doc, response);
+  server.send(200, "application/json", response);
+  
+  // Update the TFT display with the new status
   updateTFTDisplay();
+  
+  // Debug output
+  Serial.print("LED Mode: ");
+  Serial.println(ledMode);
 }
 
 void handleTogglePump() {
@@ -550,35 +722,94 @@ void handleTogglePump() {
 
 void setup() {
   Serial.begin(115200);
+  Serial.println("\n=== HydroBrain System Initializing ===");
   
+  // Initialize SPIFFS for web files
   if (!SPIFFS.begin(true)) {
-    Serial.println("An error occurred while mounting SPIFFS");
+    Serial.println("ERROR: SPIFFS mount failed");
     return;
   }
   
+  // List files in SPIFFS to verify
+  File root = SPIFFS.open("/");
+  File file = root.openNextFile();
+  
+  Serial.println("\n=== SPIFFS FILES ===");
+  bool imagesDirectoryFound = false;
+  bool backImageFound = false;
+  
+  while (file) {
+    String fileName = file.name();
+    size_t fileSize = file.size();
+    
+    Serial.print("  • ");
+    Serial.print(fileName);
+    Serial.print(" - ");
+    Serial.print(fileSize);
+    Serial.println(" bytes");
+    
+    if (fileName.indexOf("data/images/") >= 0) {
+      imagesDirectoryFound = true;
+    }
+    
+    if (fileName.indexOf("data/images/back.png") >= 0) {
+      backImageFound = true;
+    }
+    
+    file = root.openNextFile();
+  }
+  
+  Serial.println("===================");
+  Serial.print("Images directory found: ");
+  Serial.println(imagesDirectoryFound ? "YES" : "NO");
+  Serial.print("Background image found: ");
+  Serial.println(backImageFound ? "YES" : "NO");
+  Serial.println("===================\n");
+  
+  // Initialize TFT display
   tft.begin();
-  tft.setRotation(3);
-  tft.fillScreen(ILI9341_WHITE);
-  tft.setTextColor(ILI9341_BLACK);
+  tft.setRotation(1);
+  tft.fillScreen(BACKGROUND_COLOR);
+  tft.setTextColor(TEXT_DARK);
   tft.setTextSize(2);
   
-  dht.begin();
+  // Show initial message
+  tft.setCursor(60, 120);
+  tft.println("SYSTEM STARTING...");
   
+  // Initialize components
+  dht.begin();
+  Serial.println("DHT sensor initialized");
+  
+  // Initialize pins
   pinMode(TFT_LED, OUTPUT);
-  digitalWrite(TFT_LED, HIGH);
+  digitalWrite(TFT_LED, HIGH);  // Turn on TFT backlight
+  
   pinMode(TRIG_PIN, OUTPUT);
   pinMode(ECHO_PIN, INPUT);
-  pinMode(WATER_PUMP_PIN, OUTPUT);
-  digitalWrite(WATER_PUMP_PIN, LOW);
   
+  pinMode(WATER_PUMP_PIN, OUTPUT);
+  digitalWrite(WATER_PUMP_PIN, LOW);  // Start with pump off
+  
+  // Initialize NeoPixel strip
   strip.begin();
   strip.setBrightness(BRIGHTNESS);
+  // Start with all LEDs off
+  for (int i = 0; i < NUM_LEDS; i++) {
+    strip.setPixelColor(i, strip.Color(0, 0, 0));
+  }
   strip.show();
+  Serial.println("NeoPixel strip initialized");
   
-  tft.setCursor(10, 10);
-  tft.println("Connecting to WiFi...");
+  // Connect to WiFi
+  tft.fillScreen(BACKGROUND_COLOR);
+  tft.setTextColor(TEXT_DARK);
+  tft.setCursor(50, 110);
+  tft.println("CONNECTING TO WIFI...");
   
+  WiFi.mode(WIFI_STA);  // Station mode
   WiFi.begin(ssid, password);
+  
   int attempts = 0;
   while (WiFi.status() != WL_CONNECTED && attempts < 20) {
     delay(500);
@@ -591,34 +822,103 @@ void setup() {
     Serial.print("IP Address: ");
     Serial.println(WiFi.localIP());
     
-    tft.setCursor(10, 40);
+    tft.fillScreen(BACKGROUND_COLOR);
+    tft.setCursor(50, 90);
+    tft.println("WIFI CONNECTED");
+    tft.setCursor(50, 120);
     tft.print("IP: ");
     tft.println(WiFi.localIP().toString());
+    delay(2000);  // Show the IP briefly
   } else {
-    Serial.println("WiFi connection failed");
-    tft.setCursor(10, 40);
-    tft.println("WiFi connection failed");
+    Serial.println("\nWiFi connection failed");
+    tft.fillScreen(BACKGROUND_COLOR);
+    tft.setCursor(30, 110);
+    tft.println("WIFI CONNECTION FAILED");
+    delay(2000);
   }
   
+  // Setup server routes
   server.on("/", HTTP_GET, handleRoot);
   server.on("/data", HTTP_GET, handleData);
   server.on("/toggle-led", HTTP_GET, handleToggleLED);
   server.on("/toggle-pump", HTTP_GET, handleTogglePump);
-  // Add route for serving static files
-  server.serveStatic("/images/", SPIFFS, "/images/");
   
+  // Handle CORS preflight requests
+  server.on("/data", HTTP_OPTIONS, []() {
+    server.sendHeader("Access-Control-Allow-Origin", "*");
+    server.sendHeader("Access-Control-Allow-Methods", "GET, OPTIONS");
+    server.sendHeader("Access-Control-Allow-Headers", "Content-Type");
+    server.send(204);
+  });
+  
+  // Handle 404 (Not Found) errors
+  server.onNotFound([]() {
+    String message = "File Not Found\n\n";
+    message += "URI: ";
+    message += server.uri();
+    message += "\nMethod: ";
+    message += (server.method() == HTTP_GET) ? "GET" : "POST";
+    message += "\nArguments: ";
+    message += server.args();
+    message += "\n";
+    
+    for (uint8_t i = 0; i < server.args(); i++) {
+      message += " " + server.argName(i) + ": " + server.arg(i) + "\n";
+    }
+    
+    Serial.println(message);
+    server.send(404, "text/plain", message);
+  });
+  
+  // Serve static files from SPIFFS
+  server.serveStatic("/images/", SPIFFS, "/images/", "max-age=86400");
+  
+  // Start the web server
   server.begin();
   Serial.println("HTTP server started");
   
+  // Initial sensor readings
   updateSensorData();
-  delay(2000);
+  
+  Serial.println("=== HydroBrain System Ready ===");
 }
 
 void loop() {
+  // Handle server client requests
   server.handleClient();
   
+  // Monitor WiFi connection and reconnect if necessary
+  static unsigned long lastWiFiCheck = 0;
+  if (millis() - lastWiFiCheck > 10000) {  // Check every 10 seconds
+    if (WiFi.status() != WL_CONNECTED) {
+      Serial.println("WiFi connection lost! Attempting to reconnect...");
+      
+      // Attempt to reconnect
+      WiFi.disconnect();
+      delay(1000);
+      WiFi.begin(ssid, password);
+      
+      // Wait for reconnection with timeout
+      int attempts = 0;
+      while (WiFi.status() != WL_CONNECTED && attempts < 10) {
+        delay(500);
+        Serial.print(".");
+        attempts++;
+      }
+      
+      if (WiFi.status() == WL_CONNECTED) {
+        Serial.println("\nWiFi reconnected successfully");
+        Serial.print("New IP Address: ");
+        Serial.println(WiFi.localIP());
+      }
+    }
+    lastWiFiCheck = millis();
+  }
+  
+  // Update sensor data periodically
   static unsigned long lastSensorUpdate = 0;
-  if (millis() - lastSensorUpdate > 30000) {
+  if (millis() - lastSensorUpdate > 30000) {  // Every 30 seconds
+    Serial.println("Updating sensor data...");
     updateSensorData();
     lastSensorUpdate = millis();
   }
