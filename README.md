@@ -1,5 +1,5 @@
 # Smart Hydroponic Tower System
-![HydroBrain Flow](./data/images/Hydroschema.png)
+![HydroBrain Flow](./images/Hydroschema.png)
 A complete smart system for monitoring and controlling a hydroponic tower using an ESP32, featuring a TFT display and a responsive web dashboard over WiFi.
 
 ## Features
