@@ -588,7 +588,7 @@ void updateSensorData() {
     if (!dhtReadSuccess) {
       // If we never had a successful read, use defaults
       humidity = 33.1;  // Default to 50% humidity
-      airTemp = 22.0;   // Default to 25°C
+      airTemp = 22.1;   // Default to 25°CC
       
       // Add visual indicator to the display
       // This lets you know you're seeing default values
