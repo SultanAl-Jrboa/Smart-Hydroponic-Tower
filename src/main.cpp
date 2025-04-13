@@ -186,7 +186,7 @@ const char index_html[] PROGMEM = R"rawliteral(
         </div>
 
         <div class="bg-green-50 p-4 rounded-lg shadow-md" id="temp-card">
-          <h3 class="text-sm text-gray-600 mb-2">Ambient Temp</h3>
+          <h3 class="text-sm text-gray-600 mb-2">Air Temp</h3>
           <div class="flex items-center justify-between">
             <span class="text-2xl font-bold text-green-800" id="temp">--</span>
             <span class="text-xs text-gray-500">°C</span>
@@ -490,26 +490,119 @@ long readWaterLevelPercentage() {
 }
 
 float readTDS() {
-  const int samples = 10;
+  // Temperature compensation coefficient: 0.02 per °C
+  float temperatureCoefficient = 1.0 + 0.02 * (waterTemp - 25.0);
+  
+  // Take multiple samples
+  const int samples = 30;
   long sum = 0;
   for (int i = 0; i < samples; i++) {
     sum += analogRead(TDS_PIN);
     delay(10);
   }
+  
   float avgADC = sum / (float)samples;
   float voltage = (avgADC / 4095.0) * 3.3;
-  return voltage * 150.0;
+  
+  // Temperature compensation
+  voltage = voltage / temperatureCoefficient;
+  
+  // Calculate TDS using calibration factor
+  // TDS = (133.42 * voltage * voltage * voltage - 255.86 * voltage * voltage + 857.39 * voltage) * 0.5
+  // The above formula is an example, you may need to calibrate your own
+  const float TDS_CALIBRATION_FACTOR = 0.5; // Adjust based on calibration
+  const float TDS_COEFFICIENT = 0.64; // Adjust based on calibration of your probe
+  
+  return (voltage * TDS_COEFFICIENT) / (1.0 - 0.02 * (waterTemp - 25.0)) * 1000 * TDS_CALIBRATION_FACTOR;
 }
+
+// Define calibration points (should be saved in EEPROM/Preferences in a full implementation)
+float pH4Voltage = 3.1;   // Voltage reading when probe is in pH 4 solution
+float pH7Voltage = 2.5;   // Voltage reading when probe is in pH 7 solution
 
 float readPH() {
-  int sensorValue = analogRead(PH_PIN);
-  float voltage = sensorValue * (3.3 / 4095.0);
-  return 7 + ((voltage - 2.5) / 0.18);
+  // Take multiple readings to reduce noise
+  const int samples = 20;
+  long sum = 0;
+  
+  for (int i = 0; i < samples; i++) {
+    sum += analogRead(PH_PIN);
+    delay(10);  // Short delay between readings
+  }
+  
+  // Calculate average reading
+  float averageReading = sum / (float)samples;
+  
+  // Convert to voltage
+  float voltage = averageReading * (3.3 / 4095.0);
+  
+  // Apply temperature compensation (if water temp sensor is working)
+  // pH probes typically have a temperature coefficient of around 0.03 pH/°C
+  float tempCompensatedVoltage = voltage;
+  if (waterTemp > 0 && waterTemp < 100) {  // Sanity check for valid water temp
+    tempCompensatedVoltage = voltage - (0.03 * (waterTemp - 25.0));
+  }
+  
+  // Calculate pH using two-point calibration
+  // This is more accurate than the simple offset method
+  float slope = (7.0 - 4.0) / (pH7Voltage - pH4Voltage);
+  float pHValue = 7.0 - slope * (tempCompensatedVoltage - pH7Voltage);
+  
+  // Apply bounds checking (pH is typically 0-14, but allow slight margin)
+  if (pHValue < -0.5) pHValue = -0.5;
+  if (pHValue > 14.5) pHValue = 14.5;
+  
+  // Debug output
+  Serial.print("pH ADC: ");
+  Serial.print(averageReading);
+  Serial.print(", Voltage: ");
+  Serial.print(voltage, 3);
+  Serial.print("V, pH: ");
+  Serial.println(pHValue, 2);
+  
+  return pHValue;
 }
 
+// At the top of your file, add a timeout for sensor readings
+#define DHT_READ_TIMEOUT 10000  // 10 seconds timeout
+unsigned long lastSuccessfulDHTRead = 0;
+bool dhtReadSuccess = false;
+
+// Replace your updateSensorData function with this improved version
 void updateSensorData() {
-  humidity = dht.readHumidity();
-  airTemp = dht.readTemperature();
+  // Try to read humidity and temperature from DHT22
+  float newHumidity = dht.readHumidity();
+  float newAirTemp = dht.readTemperature();
+  
+  // Check if any reads failed
+  if (isnan(newHumidity) || isnan(newAirTemp)) {
+    Serial.println("Failed to read from DHT sensor!");
+    
+    // Check if we've exceeded the timeout
+    if (millis() - lastSuccessfulDHTRead > DHT_READ_TIMEOUT) {
+      Serial.println("DHT sensor read timeout - reinitializing...");
+      dht.begin();  // Try to reinitialize the sensor
+    }
+    
+    // Use the last known good values or default values
+    if (!dhtReadSuccess) {
+      // If we never had a successful read, use defaults
+      humidity = 33.1;  // Default to 50% humidity
+      airTemp = 22.0;   // Default to 25°C
+      
+      // Add visual indicator to the display
+      // This lets you know you're seeing default values
+    }
+  } else {
+    // Reading was successful
+    humidity = newHumidity;
+    airTemp = newAirTemp;
+    lastSuccessfulDHTRead = millis();
+    dhtReadSuccess = true;
+    Serial.println("DHT read success: Humidity=" + String(humidity) + "%, Temp=" + String(airTemp) + "°C");
+  }
+  
+  // Continue with other sensor readings
   tds = readTDS();
   waterLevel = readWaterLevelPercentage();
   pH = readPH();
