@@ -516,12 +516,15 @@ float readTDS() {
   return (voltage * TDS_COEFFICIENT) / (1.0 - 0.02 * (waterTemp - 25.0)) * 1000 * TDS_CALIBRATION_FACTOR;
 }
 
+
 // Define calibration points (should be saved in EEPROM/Preferences in a full implementation)
 float pH4Voltage = 3.1;   // Voltage reading when probe is in pH 4 solution
 float pH7Voltage = 2.5;   // Voltage reading when probe is in pH 7 solution
 
+
 float readPH() {
   // Take multiple readings to reduce noise
+  
   const int samples = 20;
   long sum = 0;
   
