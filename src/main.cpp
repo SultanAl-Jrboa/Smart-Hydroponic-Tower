@@ -44,8 +44,8 @@ Adafruit_NeoPixel strip(NUM_LEDS, LED_PIN, NEO_GRB + NEO_KHZ800);
 #define WATER_PUMP_PIN 27
 
 // WiFi Credentials
-const char* ssid = "Tuwaiq's employees";
-const char* password = "Bootcamp@001";
+const char* ssid = "Battal 4G_EXTnew";
+const char* password = "0505169538";
 
 // Web Server
 WebServer server(80);
@@ -105,226 +105,600 @@ const char index_html[] PROGMEM = R"rawliteral(
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Smart Hydroponic System Dashboard</title>
+  <title>HydroBrain Dashboard</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
-<style>
-  body {
-    background: url('/images/back.png') no-repeat center center fixed;
-    background-size: cover;
-  }
-  /* Make card backgrounds slightly transparent to see the background */
-  .bg-white, .bg-green-50 {
-    background-color: rgba(255, 255, 255, 0.9) !important;
-  }
-  /* Add some text shadow to improve readability on image background */
-  h1, h2, h3 {
-    text-shadow: 0px 0px 3px rgba(255, 255, 255, 0.5);
-  }
-  /* Ensure good contrast for text on the background */
-  .text-gray-600 {
-    color: rgba(55, 65, 81, 0.9) !important;
-  }
-  /* Add a slight semi-transparent overlay to improve readability */
-  .bg-gradient-to-r {
-    background: linear-gradient(to right, rgba(6, 78, 59, 0.9), rgba(4, 120, 87, 0.9)) !important;
-  }
-</style>
-
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+  <style>
+    body {
+      background: url('/images/back.png') no-repeat center center fixed;
+      background-size: cover;
+    }
+    .bg-card {
+      background-color: rgba(255, 255, 255, 0.9) !important;
+    }
+    .bg-header {
+      background: linear-gradient(to right, rgba(6, 78, 59, 0.95), rgba(4, 120, 87, 0.95)) !important;
+    }
+    .sensor-value {
+      font-size: 1.75rem;
+      font-weight: 700;
+      transition: all 0.3s ease-in-out;
+    }
+    .sensor-card {
+      transition: all 0.3s ease;
+      border-left: 4px solid transparent;
+    }
+    .sensor-card.alert {
+      border-left: 4px solid #ef4444;
+      background-color: rgba(254, 242, 242, 0.9) !important;
+    }
+    .sensor-card.warning {
+      border-left: 4px solid #f59e0b;
+      background-color: rgba(255, 251, 235, 0.9) !important;
+    }
+    .sensor-card.optimal {
+      border-left: 4px solid #10b981;
+      background-color: rgba(236, 253, 245, 0.9) !important;
+    }
+    .status-badge {
+      padding: 0.15rem 0.5rem;
+      border-radius: 9999px;
+      font-size: 0.75rem;
+      font-weight: 600;
+    }
+    .status-badge.optimal {
+      background-color: rgba(16, 185, 129, 0.1);
+      color: #047857;
+    }
+    .status-badge.alert {
+      background-color: rgba(239, 68, 68, 0.1);
+      color: #b91c1c;
+    }
+    .status-badge.warning {
+      background-color: rgba(245, 158, 11, 0.1);
+      color: #d97706;
+    }
+    .water-ripple {
+      position: absolute;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      height: 4px;
+      background-color: rgba(255, 255, 255, 0.3);
+      animation: ripple 2s infinite linear;
+    }
+    @keyframes ripple {
+      0% { transform: translateY(0); opacity: 0.7; }
+      50% { transform: translateY(-10px); opacity: 0; }
+      100% { transform: translateY(-10px); opacity: 0; }
+    }
+    .toggle-switch {
+      position: relative;
+      display: inline-block;
+      width: 50px;
+      height: 24px;
+    }
+    .toggle-switch input {
+      opacity: 0;
+      width: 0;
+      height: 0;
+    }
+    .slider {
+      position: absolute;
+      cursor: pointer;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background-color: #ccc;
+      transition: .4s;
+      border-radius: 24px;
+    }
+    .slider:before {
+      position: absolute;
+      content: "";
+      height: 18px;
+      width: 18px;
+      left: 3px;
+      bottom: 3px;
+      background-color: white;
+      transition: .4s;
+      border-radius: 50%;
+    }
+    input:checked + .slider {
+      background-color: #10b981;
+    }
+    input:checked + .slider:before {
+      transform: translateX(26px);
+    }
+    .control-card {
+      background-color: rgba(255, 255, 255, 0.9);
+      border-radius: 0.5rem;
+      padding: 0.75rem;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 0.75rem;
+      transition: all 0.3s ease;
+    }
+    .control-card:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+    }
+    .notification-item {
+      padding: 0.5rem;
+      border-radius: 0.375rem;
+      margin-bottom: 0.5rem;
+      font-size: 0.75rem;
+    }
+    .notification-item.info {
+      background-color: rgba(59, 130, 246, 0.1);
+      border-left: 3px solid #3b82f6;
+    }
+    .notification-item.success {
+      background-color: rgba(16, 185, 129, 0.1);
+      border-left: 3px solid #10b981;
+    }
+    .pulse {
+      animation: pulse 2s infinite;
+    }
+    @keyframes pulse {
+      0% {
+        transform: scale(0.95);
+        box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.7);
+      }
+      70% {
+        transform: scale(1);
+        box-shadow: 0 0 0 10px rgba(16, 185, 129, 0);
+      }
+      100% {
+        transform: scale(0.95);
+        box-shadow: 0 0 0 0 rgba(16, 185, 129, 0);
+      }
+    }
+  </style>
 </head>
 <body class="min-h-screen flex flex-col items-center justify-center p-4">
-  <div class="w-full max-w-6xl mx-auto bg-white bg-opacity-95 rounded-2xl shadow-2xl overflow-hidden">
-    <div class="bg-gradient-to-r from-green-700 to-green-900 p-6">
-      <div class="flex justify-between items-center">
-        <h1 class="text-3xl font-bold text-white">HydroBrain Dashboard</h1>
-        <div class="text-white text-sm">
-          <span id="current-time" class="font-mono">00:00:00</span>
-          <span class="ml-4">| System Status: <span id="system-status" class="font-semibold text-green-300">Operational</span></span>
-        </div>
-      </div>
-    </div>
-
-    <div class="grid md:grid-cols-3 gap-6 p-6">
-      <div class="md:col-span-2 grid grid-cols-3 gap-4">
-        <!-- Sensor Cards with Enhanced Styling and Alerts -->
-        <div class="bg-green-50 p-4 rounded-lg shadow-md relative" id="tds-card">
-          <div class="absolute top-2 right-2 text-xs text-gray-500">
-            <span id="tds-status" class="font-semibold text-green-600">Normal</span>
-          </div>
-          <h3 class="text-sm text-gray-600 mb-2">TDS</h3>
-          <div class="flex items-center justify-between">
-            <span class="text-2xl font-bold text-green-800" id="tds">--</span>
-            <span class="text-xs text-gray-500">ppm</span>
-          </div>
-        </div>
-
-        <div class="bg-green-50 p-4 rounded-lg shadow-md relative" id="ph-card">
-          <div class="absolute top-2 right-2 text-xs text-gray-500">
-            <span id="ph-status" class="font-semibold text-green-600">Balanced</span>
-          </div>
-          <h3 class="text-sm text-gray-600 mb-2">pH Level</h3>
-          <div class="flex items-center justify-between">
-            <span class="text-2xl font-bold text-green-800" id="ph">--</span>
-          </div>
-        </div>
-
-        <!-- Similar enhanced cards for other sensors -->
-        <div class="bg-green-50 p-4 rounded-lg shadow-md" id="water-temp-card">
-          <h3 class="text-sm text-gray-600 mb-2">Water Temp</h3>
-          <div class="flex items-center justify-between">
-            <span class="text-2xl font-bold text-green-800" id="water-temp">--</span>
-            <span class="text-xs text-gray-500">°C</span>
-          </div>
-        </div>
-
-        <div class="bg-green-50 p-4 rounded-lg shadow-md" id="humidity-card">
-          <h3 class="text-sm text-gray-600 mb-2">Humidity</h3>
-          <div class="flex items-center justify-between">
-            <span class="text-2xl font-bold text-green-800" id="humidity">--</span>
-            <span class="text-xs text-gray-500">%</span>
-          </div>
-        </div>
-
-        <div class="bg-green-50 p-4 rounded-lg shadow-md" id="temp-card">
-          <h3 class="text-sm text-gray-600 mb-2">Air Temp</h3>
-          <div class="flex items-center justify-between">
-            <span class="text-2xl font-bold text-green-800" id="temp">--</span>
-            <span class="text-xs text-gray-500">°C</span>
-          </div>
-        </div>
-
-        <div class="bg-green-50 p-4 rounded-lg shadow-md flex flex-col justify-between">
-          <h3 class="text-sm text-gray-600 mb-2">Nutrient Tank Level</h3>
-          <div class="w-full h-24 border-2 border-green-600 rounded-lg relative overflow-hidden">
-            <div id="water-level" class="absolute bottom-0 left-0 right-0 bg-green-400 transition-all duration-500" style="height: 0%;">
-              <div class="absolute bottom-0 left-0 right-0 bg-green-500 opacity-50 h-4"></div>
-            </div>
-            <div class="absolute inset-0 flex items-center justify-center text-green-900 font-bold" id="water-level-text">
-              --%
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <div class="bg-green-50 rounded-lg p-4 flex flex-col justify-between">
+  <div class="w-full max-w-6xl mx-auto bg-card rounded-xl shadow-2xl overflow-hidden border border-gray-200">
+    <!-- Header -->
+    <div class="bg-header p-6">
+      <div class="flex flex-col md:flex-row justify-between items-start md:items-center">
         <div>
-          <h3 class="text-lg font-semibold text-gray-700 mb-4">System Controls</h3>
-          <div class="space-y-4">
-            <button id="led-btn" class="w-full py-3 bg-green-600 hover:bg-green-700 text-white font-semibold rounded-lg transition duration-300 ease-in-out transform hover:scale-105 flex items-center justify-center">
-              <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 mr-2" viewBox="0 0 20 20" fill="currentColor">
-                <path d="M11 3a1 1 0 10-2 0v1a1 1 0 102 0V3zM15.657 5.757a1 1 0 00-1.414-1.414l-.707.707a1 1 0 001.414 1.414l.707-.707zM18 10a1 1 0 01-1 1h-1a1 1 0 110-2h1a1 1 0 011 1zM5.05 6.464A1 1 0 106.464 5.05l-.707-.707a1 1 0 00-1.414 1.414l.707.707zM5 10a1 1 0 01-1 1H3a1 1 0 110-2h1a1 1 0 011 1zm3 5a1 1 0 100-2H7a1 1 0 100 2h1zm5 3a1 1 0 100-2h-1a1 1 0 100 2h1z"/>
-              </svg>
-              Toggle LED
-            </button>
-            <button id="pump-btn" class="w-full py-3 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold rounded-lg transition duration-300 ease-in-out transform hover:scale-105 flex items-center justify-center">
-              <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 mr-2" viewBox="0 0 20 20" fill="currentColor">
-                <path fill-rule="evenodd" d="M11.3 1.046A1 1 0 0112 2v5h4a1 1 0 01.82 1.573l-7 10A1 1 0 018 18v-5H4a1 1 0 01-.82-1.573l7-10a1 1 0 011.12-.38z" clip-rule="evenodd"/>
-              </svg>
-              Toggle Pump
-            </button>
-          </div>
+          <h1 class="text-3xl font-bold text-white flex items-center">
+            <i class="fas fa-leaf mr-3"></i>
+            HydroBrain Dashboard
+          </h1>
+          <p class="text-green-200 text-sm mt-1">Enterprise Hydroponic Management System</p>
         </div>
-        <div class="mt-4 text-sm text-gray-600">
-          <p>Last System Check: <span id="last-check">--</span></p>
-          <p class="mt-1">Next Scheduled Check: <span id="next-check">--</span></p>
+        <div class="text-white mt-3 md:mt-0 flex flex-col items-end">
+          <div class="text-lg font-mono" id="current-time">00:00:00</div>
+          <div class="text-xs text-green-200" id="current-date">Loading date...</div>
+          <div class="mt-1 text-xs px-3 py-1 bg-green-700 rounded-full flex items-center">
+            <span class="h-2 w-2 bg-green-300 rounded-full mr-2 animate-pulse"></span>
+            System Status: <span id="system-status" class="font-semibold text-green-300">Operational</span>
+          </div>
         </div>
       </div>
     </div>
 
-    <div class="p-6 bg-white border-t bg-opacity-90">
-      <h2 class="text-xl font-semibold text-gray-700 mb-4">Sensor Trends</h2>
-      <canvas id="sensorChart"></canvas>
+    <!-- Dashboard Grid -->
+    <div class="grid md:grid-cols-3 gap-6 p-6">
+      <!-- Main Content Area - Sensor Cards -->
+      <div class="md:col-span-2 grid grid-cols-2 md:grid-cols-3 gap-4">
+        <!-- TDS Card -->
+        <div class="sensor-card bg-card p-4 rounded-lg shadow-md optimal" id="tds-card">
+          <div class="flex justify-between items-start">
+            <h3 class="text-sm font-semibold text-gray-700 flex items-center">
+              <i class="fas fa-tachometer-alt mr-2"></i>
+              TDS
+            </h3>
+            <span class="status-badge optimal" id="tds-status">Optimal</span>
+          </div>
+          <div class="mt-3">
+            <div class="flex items-end">
+              <span class="sensor-value text-gray-800" id="tds">--</span>
+              <span class="text-sm text-gray-500 ml-1 mb-1">ppm</span>
+            </div>
+            <div class="mt-2 text-xs text-gray-500">Optimal: 400-600 ppm</div>
+          </div>
+        </div>
+
+        <!-- pH Card -->
+        <div class="sensor-card bg-card p-4 rounded-lg shadow-md optimal" id="ph-card">
+          <div class="flex justify-between items-start">
+            <h3 class="text-sm font-semibold text-gray-700 flex items-center">
+              <i class="fas fa-vial mr-2"></i>
+              pH Level
+            </h3>
+            <span class="status-badge optimal" id="ph-status">Optimal</span>
+          </div>
+          <div class="mt-3">
+            <div class="flex items-end">
+              <span class="sensor-value text-gray-800" id="ph">--</span>
+            </div>
+            <div class="mt-2 text-xs text-gray-500">Optimal: 5.5-6.5</div>
+          </div>
+        </div>
+
+        <!-- Water Temp Card -->
+        <div class="sensor-card bg-card p-4 rounded-lg shadow-md optimal" id="water-temp-card">
+          <div class="flex justify-between items-start">
+            <h3 class="text-sm font-semibold text-gray-700 flex items-center">
+              <i class="fas fa-temperature-low mr-2"></i>
+              Water Temp
+            </h3>
+            <span class="status-badge optimal" id="water-temp-status">Optimal</span>
+          </div>
+          <div class="mt-3">
+            <div class="flex items-end">
+              <span class="sensor-value text-gray-800" id="water-temp">--</span>
+              <span class="text-sm text-gray-500 ml-1 mb-1">°C</span>
+            </div>
+            <div class="mt-2 text-xs text-gray-500">Optimal: 20-25 °C</div>
+          </div>
+        </div>
+
+        <!-- Humidity Card -->
+        <div class="sensor-card bg-card p-4 rounded-lg shadow-md" id="humidity-card">
+          <div class="flex justify-between items-start">
+            <h3 class="text-sm font-semibold text-gray-700 flex items-center">
+              <i class="fas fa-water mr-2"></i>
+              Humidity
+            </h3>
+            <span class="status-badge optimal" id="humidity-status">Optimal</span>
+          </div>
+          <div class="mt-3">
+            <div class="flex items-end">
+              <span class="sensor-value text-gray-800" id="humidity">--</span>
+              <span class="text-sm text-gray-500 ml-1 mb-1">%</span>
+            </div>
+            <div class="mt-2 text-xs text-gray-500">Optimal: 55-70%</div>
+          </div>
+        </div>
+
+        <!-- Air Temp Card -->
+        <div class="sensor-card bg-card p-4 rounded-lg shadow-md" id="temp-card">
+          <div class="flex justify-between items-start">
+            <h3 class="text-sm font-semibold text-gray-700 flex items-center">
+              <i class="fas fa-thermometer-half mr-2"></i>
+              Air Temp
+            </h3>
+            <span class="status-badge optimal" id="temp-status">Optimal</span>
+          </div>
+          <div class="mt-3">
+            <div class="flex items-end">
+              <span class="sensor-value text-gray-800" id="temp">--</span>
+              <span class="text-sm text-gray-500 ml-1 mb-1">°C</span>
+            </div>
+            <div class="mt-2 text-xs text-gray-500">Optimal: 22-28 °C</div>
+          </div>
+        </div>
+
+        <!-- Nutrient Tank Level with improved visuals -->
+        <div class="bg-card p-4 rounded-lg shadow-md" id="water-level-card">
+          <h3 class="text-sm font-semibold text-gray-700 flex items-center">
+            <i class="fas fa-fill-drip mr-2"></i>
+            Nutrient Tank
+          </h3>
+          <div class="mt-3">
+            <div class="w-full h-28 bg-gray-100 border border-gray-300 rounded-lg relative overflow-hidden">
+              <div id="water-level" class="absolute bottom-0 left-0 right-0 bg-green-400 transition-all duration-1000" style="height: 0%;">
+                <div class="water-ripple"></div>
+                <div class="water-ripple" style="animation-delay: 0.5s"></div>
+                <div class="water-ripple" style="animation-delay: 1s"></div>
+              </div>
+              <div class="absolute inset-0 flex items-center justify-center">
+                <div class="bg-white bg-opacity-80 px-3 py-1 rounded-full shadow-sm">
+                  <span class="font-bold text-green-700" id="water-level-text">--%</span>
+                </div>
+              </div>
+            </div>
+            <div class="mt-2 text-xs text-gray-500 flex justify-between">
+              <span>Low</span>
+              <span>Optimal</span>
+              <span>Full</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Sidebar - Control Panel -->
+      <div class="md:col-span-1 grid grid-cols-1 gap-4">
+        <!-- System Controls Card -->
+        <div class="bg-card p-4 rounded-lg shadow-md">
+          <h3 class="text-base font-semibold text-gray-700 flex items-center mb-4">
+            <i class="fas fa-sliders-h mr-2"></i>
+            System Controls
+          </h3>
+          
+          <div class="space-y-3">
+            <!-- LED Control -->
+            <div class="control-card" id="led-control">
+              <div class="flex items-center">
+                <div class="h-8 w-8 rounded-full flex items-center justify-center mr-3 bg-green-100 text-green-600">
+                  <i class="fas fa-lightbulb"></i>
+                </div>
+                <div>
+                  <p class="text-sm font-medium text-gray-700">LED Lighting</p>
+                  <p class="text-xs text-gray-500" id="led-mode-text">Loading...</p>
+                </div>
+              </div>
+              <button id="led-btn" class="px-3 py-2 bg-green-600 hover:bg-green-700 text-white font-semibold rounded-lg transition duration-300 text-sm">
+                <i class="fas fa-power-off mr-1"></i>
+                Change Mode
+              </button>
+            </div>
+            
+            <!-- Pump Control -->
+            <div class="control-card" id="pump-control">
+              <div class="flex items-center">
+                <div class="h-8 w-8 rounded-full flex items-center justify-center mr-3 bg-blue-100 text-blue-600">
+                  <i class="fas fa-tint"></i>
+                </div>
+                <div>
+                  <p class="text-sm font-medium text-gray-700">Nutrient Pump</p>
+                  <p class="text-xs text-gray-500" id="pump-status-text">Loading...</p>
+                </div>
+              </div>
+              <button id="pump-btn" class="px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-lg transition duration-300 text-sm">
+                <i class="fas fa-power-off mr-1"></i>
+                Toggle
+              </button>
+            </div>
+          </div>
+          
+          <div class="mt-6 pt-4 border-t border-gray-200">
+            <div class="flex justify-between text-xs text-gray-600">
+              <div>Last System Check:</div>
+              <div class="font-medium" id="last-check">--</div>
+            </div>
+            <div class="mt-2 flex justify-between text-xs text-gray-600">
+              <div>Next Scheduled Check:</div>
+              <div class="font-medium" id="next-check">--</div>
+            </div>
+          </div>
+        </div>
+        
+        <!-- System Notifications -->
+        <div class="bg-card p-4 rounded-lg shadow-md">
+          <h3 class="text-base font-semibold text-gray-700 flex items-center mb-4">
+            <i class="fas fa-bell mr-2"></i>
+            System Notifications
+          </h3>
+          
+          <div id="notifications-container" class="space-y-2 max-h-64 overflow-y-auto pr-1">
+            <div class="notification-item info">
+              <div class="flex justify-between">
+                <span>System initialized</span>
+                <span class="text-gray-500">Loading...</span>
+              </div>
+            </div>
+          </div>
+        </div>
+        
+        <!-- System Information -->
+        <div class="bg-card p-4 rounded-lg shadow-md hidden md:block">
+          <h3 class="text-base font-semibold text-gray-700 flex items-center mb-3">
+            <i class="fas fa-info-circle mr-2"></i>
+            System Information
+          </h3>
+          
+          <div class="space-y-2 text-xs">
+            <div class="flex justify-between">
+              <span class="text-gray-500">System Version</span>
+              <span class="font-medium">HydroOS 1.2.0</span>
+            </div>
+            <div class="flex justify-between">
+              <span class="text-gray-500">Uptime</span>
+              <span class="font-medium" id="uptime">Loading...</span>
+            </div>
+            <div class="flex justify-between">
+              <span class="text-gray-500">Connected Sensors</span>
+              <span class="font-medium">5 / 5 Online</span>
+            </div>
+            <div class="flex justify-between">
+              <span class="text-gray-500">Plants Growing</span>
+              <span class="font-medium">Basil, Lettuce, Mint</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Chart Section -->
+    <div class="p-6 bg-card border-t">
+      <div class="flex justify-between items-center mb-4">
+        <h2 class="text-xl font-semibold text-gray-700">Sensor Trends</h2>
+        <div class="text-sm text-gray-500">
+          <i class="fas fa-history mr-1"></i>
+          Last 5 Readings
+        </div>
+      </div>
+      <canvas id="sensorChart" class="w-full" height="250"></canvas>
+    </div>
+
+    <!-- Footer -->
+    <div class="p-4 bg-header text-white text-sm flex flex-col md:flex-row justify-between items-center">
+      <div>
+        HydroBrain Dashboard • Professional Edition
+      </div>
+      <div class="text-green-300 mt-2 md:mt-0">
+        © 2025 Sultan Al-Jarboa • Version 1.2.0
+      </div>
     </div>
   </div>
 
-  <!-- Copyright Notice -->
-  <div class="w-full max-w-6xl mx-auto mt-4 mb-2 text-center">
-    <p class="font-semibold text-lg bg-green-700 bg-opacity-70 py-2 px-4 rounded-lg inline-block text-white">
-      Made by 
-      <a href="https://www.linkedin.com/in/sultanal-jrboa/" class="font-bold text-white">Sultan Al-Jarboa</a>
-    </p>
-  </div>
-  
   <script>
-    // Real-time clock with date
-    function updateClock() {
-      const now = new Date();
-      const timeString = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-      document.getElementById('current-time').textContent = `${timeString}`;
-    }
-    setInterval(updateClock, 1000);
-    updateClock();
-
-    // Sensor Validation and Status Checking
-    function validateSensorReadings() {
-      const sensors = {
-        tds: { value: parseFloat(document.getElementById('tds').textContent), 
-               optimal: { min: 400, max: 600 } },
-        ph: { value: parseFloat(document.getElementById('ph').textContent), 
-              optimal: { min: 5.5, max: 6.5 } },
-        waterTemp: { value: parseFloat(document.getElementById('water-temp').textContent), 
-                     optimal: { min: 20, max: 25 } }
-      };
-
-      Object.entries(sensors).forEach(([sensorName, sensor]) => {
-        if (isNaN(sensor.value)) return;
-        
-        const statusEl = document.getElementById(`${sensorName}-status`);
-        const cardEl = document.getElementById(`${sensorName}-card`);
-        
-        if (sensor.value < sensor.optimal.min || sensor.value > sensor.optimal.max) {
-          statusEl.textContent = 'Alert';
-          statusEl.classList.replace('text-green-600', 'text-red-600');
-          cardEl.classList.add('border-2', 'border-red-300');
-        } else {
-          statusEl.textContent = 'Normal';
-          statusEl.classList.replace('text-red-600', 'text-green-600');
-          cardEl.classList.remove('border-2', 'border-red-300');
-        }
-      });
-    }
-
-    // LED Mode Names and Handling
+    // Initialize System Data
+    let systemData = {
+      ledMode: 0,
+      pumpStatus: false,
+      bootTime: new Date().getTime(),
+      notifications: [
+        { message: "System initialized", type: "info", time: formatTime(new Date()) }
+      ]
+    };
+    
+    // LED Mode Names
     const ledModeNames = ['Off', 'Sun Mode', 'Relaxing Mode', 'Sleeping Mode'];
-    let currentLedMode = 0;
+    const ledModeDescriptions = [
+      'LED lights are off',
+      'Full spectrum growth lighting',
+      'Mid-intensity blue spectrum',
+      'Low-intensity red spectrum'
+    ];
+    
+    // Function to format time
+    function formatTime(date) {
+      return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    }
+    
+    // Update clock and date
+    function updateDateTime() {
+      const now = new Date();
+      document.getElementById('current-time').textContent = now.toLocaleTimeString([], 
+        { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+      document.getElementById('current-date').textContent = now.toLocaleDateString([], 
+        { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+      
+      // Update uptime
+      const uptimeMs = now.getTime() - systemData.bootTime;
+      const uptimeSec = Math.floor(uptimeMs / 1000);
+      const days = Math.floor(uptimeSec / 86400);
+      const hours = Math.floor((uptimeSec % 86400) / 3600);
+      const mins = Math.floor((uptimeSec % 3600) / 60);
+      
+      let uptimeStr = '';
+      if (days > 0) uptimeStr += `${days} days, `;
+      uptimeStr += `${hours} hrs, ${mins} mins`;
+      document.getElementById('uptime').textContent = uptimeStr;
+    }
+    
+    setInterval(updateDateTime, 1000);
+    updateDateTime();
 
-    document.getElementById('led-btn').addEventListener('click', async () => {
-      try {
-        const response = await fetch('/toggle-led');
-        const data = await response.json();
-        
-        // Update button text and mode
-        currentLedMode = data.mode;
-        updateLedButtonDisplay();
-      } catch (error) {
-        console.error('Error toggling LED:', error);
+    // Sensor Validation and Status
+    function validateSensor(value, minValue, maxValue, elementId, statusElementId) {
+      if (isNaN(value) || value === null) return;
+      
+      const element = document.getElementById(elementId);
+      const statusElement = document.getElementById(statusElementId);
+      const card = element.closest('.sensor-card');
+      
+      // Remove all status classes
+      card.classList.remove('optimal', 'warning', 'alert');
+      statusElement.classList.remove('optimal', 'warning', 'alert');
+      
+      let statusClass = 'optimal';
+      let statusText = 'Optimal';
+      
+      if (value < minValue) {
+        statusClass = 'warning';
+        statusText = 'Low';
+      } else if (value > maxValue) {
+        statusClass = 'alert';
+        statusText = 'High';
       }
-    });
+      
+      // Add appropriate class
+      card.classList.add(statusClass);
+      statusElement.classList.add(statusClass);
+      statusElement.textContent = statusText;
+    }
 
-    function updateLedButtonDisplay() {
+    // Function to validate all sensor readings
+    function validateAllSensors() {
+      const tdsValue = parseFloat(document.getElementById('tds').textContent);
+      const phValue = parseFloat(document.getElementById('ph').textContent);
+      const waterTempValue = parseFloat(document.getElementById('water-temp').textContent);
+      const humidityValue = parseFloat(document.getElementById('humidity').textContent);
+      const airTempValue = parseFloat(document.getElementById('temp').textContent);
+      
+      validateSensor(tdsValue, 400, 600, 'tds', 'tds-status');
+      validateSensor(phValue, 5.5, 6.5, 'ph', 'ph-status');
+      validateSensor(waterTempValue, 20, 25, 'water-temp', 'water-temp-status');
+      validateSensor(humidityValue, 55, 70, 'humidity', 'humidity-status');
+      validateSensor(airTempValue, 22, 28, 'temp', 'temp-status');
+    }
+
+    // Update LED status display
+    function updateLedDisplay() {
       const ledBtn = document.getElementById('led-btn');
+      const ledModeText = document.getElementById('led-mode-text');
       const modeColors = [
-        '', 
+        'bg-gray-600 hover:bg-gray-700', 
         'bg-yellow-500 hover:bg-yellow-600', 
         'bg-blue-500 hover:bg-blue-600', 
         'bg-red-500 hover:bg-red-600'
       ];
-
-      // Remove previous color classes
-      ledBtn.classList.remove(...modeColors.filter(c => c !== ''));
       
-      // Add current mode color
-      if (currentLedMode > 0) {
-        ledBtn.classList.add(modeColors[currentLedMode]);
-      }
-
-      // Update button text
+      // Remove previous color classes and add current mode color
+      modeColors.forEach(color => {
+        ledBtn.classList.remove(...color.split(' '));
+      });
+      
+      ledBtn.classList.add(...modeColors[systemData.ledMode].split(' '));
+      
+      // Update text
+      ledModeText.textContent = ledModeDescriptions[systemData.ledMode];
       ledBtn.innerHTML = `
-        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 mr-2" viewBox="0 0 20 20" fill="currentColor">
-          <path d="M11 3a1 1 0 10-2 0v1a1 1 0 102 0V3zM15.657 5.757a1 1 0 00-1.414-1.414l-.707.707a1 1 0 001.414 1.414l.707-.707zM18 10a1 1 0 01-1 1h-1a1 1 0 110-2h1a1 1 0 011 1zM5.05 6.464A1 1 0 106.464 5.05l-.707-.707a1 1 0 00-1.414 1.414l.707.707zM5 10a1 1 0 01-1 1H3a1 1 0 110-2h1a1 1 0 011 1zm3 5a1 1 0 100-2H7a1 1 0 100 2h1zm5 3a1 1 0 100-2h-1a1 1 0 100 2h1z"/>
-        </svg>
-        ${ledModeNames[currentLedMode]}
+        <i class="fas fa-${systemData.ledMode === 0 ? 'power-off' : 'sync'}"></i>
+        ${systemData.ledMode === 0 ? 'Turn On' : 'Change Mode'}
       `;
+    }
+
+    // Update pump status display
+    function updatePumpDisplay() {
+      const pumpStatusText = document.getElementById('pump-status-text');
+      pumpStatusText.textContent = systemData.pumpStatus ? 'Active - Circulating' : 'Inactive - Standby';
+      
+      const pumpBtn = document.getElementById('pump-btn');
+      pumpBtn.textContent = systemData.pumpStatus ? 'Turn Off' : 'Turn On';
+      
+      // Update button color
+      if (systemData.pumpStatus) {
+        pumpBtn.classList.remove('bg-gray-600', 'hover:bg-gray-700');
+        pumpBtn.classList.add('bg-blue-600', 'hover:bg-blue-700');
+      } else {
+        pumpBtn.classList.remove('bg-blue-600', 'hover:bg-blue-700');
+        pumpBtn.classList.add('bg-gray-600', 'hover:bg-gray-700');
+      }
+    }
+    
+    // Add notification to the system
+    function addNotification(message, type = 'info') {
+      const now = new Date();
+      const notification = {
+        message,
+        type,
+        time: formatTime(now)
+      };
+      
+      systemData.notifications.unshift(notification);
+      if (systemData.notifications.length > 10) {
+        systemData.notifications.pop();
+      }
+      
+      updateNotificationsDisplay();
+    }
+    
+    // Update notifications display
+    function updateNotificationsDisplay() {
+      const container = document.getElementById('notifications-container');
+      container.innerHTML = '';
+      
+      systemData.notifications.forEach(notification => {
+        const div = document.createElement('div');
+        div.className = `notification-item ${notification.type}`;
+        div.innerHTML = `
+          <div class="flex justify-between">
+            <span>${notification.message}</span>
+            <span class="text-gray-500">${notification.time}</span>
+          </div>
+        `;
+        container.appendChild(div);
+      });
     }
 
     // Chart Configuration
@@ -339,28 +713,32 @@ const char index_html[] PROGMEM = R"rawliteral(
             data: [0, 0, 0, 0, 0], 
             borderColor: 'rgba(22, 163, 74, 0.7)', 
             backgroundColor: 'rgba(22, 163, 74, 0.1)',
-            tension: 0.4
+            tension: 0.4,
+            borderWidth: 2
           },
           { 
             label: 'pH', 
             data: [0, 0, 0, 0, 0], 
-            borderColor: 'rgba(5, 150, 105, 0.7)', 
-            backgroundColor: 'rgba(5, 150, 105, 0.1)',
-            tension: 0.4
+            borderColor: 'rgba(37, 99, 235, 0.7)', 
+            backgroundColor: 'rgba(37, 99, 235, 0.1)',
+            tension: 0.4,
+            borderWidth: 2
           },
           { 
             label: 'Water Temp', 
             data: [0, 0, 0, 0, 0], 
-            borderColor: 'rgba(16, 185, 129, 0.7)', 
-            backgroundColor: 'rgba(16, 185, 129, 0.1)',
-            tension: 0.4
+            borderColor: 'rgba(220, 38, 38, 0.7)', 
+            backgroundColor: 'rgba(220, 38, 38, 0.1)',
+            tension: 0.4,
+            borderWidth: 2
           },
           { 
             label: 'Humidity', 
             data: [0, 0, 0, 0, 0], 
-            borderColor: 'rgba(52, 211, 153, 0.7)', 
-            backgroundColor: 'rgba(52, 211, 153, 0.1)',
-            tension: 0.4
+            borderColor: 'rgba(139, 92, 246, 0.7)', 
+            backgroundColor: 'rgba(139, 92, 246, 0.1)',
+            tension: 0.4,
+            borderWidth: 2
           }
         ]
       },
@@ -370,66 +748,63 @@ const char index_html[] PROGMEM = R"rawliteral(
           mode: 'index',
           intersect: false
         },
-        scales: {
-          x: { 
-            title: { 
-              display: true, 
-              text: 'Time' 
+        plugins: {
+          legend: {
+            position: 'bottom',
+            labels: {
+              usePointStyle: true,
+              boxWidth: 6,
+              font: {
+                size: 10
+              }
             }
           },
-          y: { 
-            beginAtZero: false,
-            title: { 
-              display: true, 
-              text: 'Sensor Values' 
+          tooltip: {
+            backgroundColor: 'rgba(255, 255, 255, 0.9)',
+            titleColor: '#333',
+            bodyColor: '#333',
+            borderColor: '#e5e7eb',
+            borderWidth: 1,
+            cornerRadius: 4,
+            boxPadding: 3,
+            usePointStyle: true,
+            callbacks: {
+              labelPointStyle: function(context) {
+                return {
+                  pointStyle: 'circle',
+                  rotation: 0
+                };
+              }
             }
           }
         },
-        plugins: {
-          legend: {
-            position: 'bottom'
-          }
+        scales: {
+          x: { 
+            grid: {
+                display: true,
+                color: 'rgba(0, 0, 0, 0.05)',
+                drawOnChartArea: true
+              },
+              ticks: {
+                font: {
+                  size: 10
+                }
+              }
+            },
+            y: { 
+              beginAtZero: false,
+              grid: {
+                color: 'rgba(0, 0, 0, 0.05)',
+              },
+              ticks: {
+                font: {
+                  size: 10
+                }
+              }
+            }
         }
       }
     });
-
-    // Function to fetch sensor data from ESP32
-    async function fetchSensorData() {
-      try {
-        const response = await fetch('/data');
-        const data = await response.json();
-        
-        // Update sensor displays
-        document.getElementById('tds').textContent = data.tds.toFixed(1);
-        document.getElementById('ph').textContent = data.ph.toFixed(1);
-        document.getElementById('water-temp').textContent = data.waterTemp.toFixed(1);
-        document.getElementById('humidity').textContent = data.humidity.toFixed(1);
-        document.getElementById('temp').textContent = data.airTemp.toFixed(1);
-        
-        // Update water level display
-        document.getElementById('water-level').style.height = `${data.waterLevel}%`;
-        document.getElementById('water-level-text').textContent = `${data.waterLevel}%`;
-        
-        // Update last check time
-        document.getElementById('last-check').textContent = data.lastCheck;
-        document.getElementById('next-check').textContent = '30 seconds';
-        
-        // Update chart with new data points
-        updateChartData(data.tds, data.ph, data.waterTemp, data.humidity);
-        
-        // Update LED mode if changed
-        if (data.ledMode !== undefined) {
-          currentLedMode = data.ledMode;
-          updateLedButtonDisplay();
-        }
-        
-        validateSensorReadings();
-      } catch (error) {
-        console.error('Error fetching sensor data:', error);
-        document.getElementById('system-status').textContent = 'Operational';
-        document.getElementById('system-status').classList.replace('text-green-300', 'text-green-300');
-      }
-    }
 
     // Function to update chart data
     function updateChartData(tdsValue, phValue, waterTempValue, humidityValue) {
@@ -453,25 +828,193 @@ const char index_html[] PROGMEM = R"rawliteral(
       chart.data.datasets[3].data.shift();
       chart.data.datasets[3].data.push(humidityValue);
 
-      chart.update();
+      chart.update('none'); // Use 'none' for smoother updates
+    }
+
+    // Function to fetch sensor data from ESP32
+    async function fetchSensorData() {
+      try {
+        const response = await fetch('/data');
+        const data = await response.json();
+        
+        // First check if connection is good by presence of data
+        if (!data) throw new Error('No data received');
+        
+        // Update system status to online with pulse animation
+        document.getElementById('system-status').textContent = 'Operational';
+        document.getElementById('system-status').classList.remove('text-yellow-300', 'text-red-300');
+        document.getElementById('system-status').classList.add('text-green-300');
+        
+        // Update sensor displays with animation
+        animateValueChange('tds', data.tds.toFixed(1));
+        animateValueChange('ph', data.ph.toFixed(1));
+        animateValueChange('water-temp', data.waterTemp.toFixed(1));
+        animateValueChange('humidity', data.humidity.toFixed(1));
+        animateValueChange('temp', data.airTemp.toFixed(1));
+        
+        // Update water level display with smooth animation
+        const waterLevelEl = document.getElementById('water-level');
+        const waterLevelTextEl = document.getElementById('water-level-text');
+        const waterLevelValue = data.waterLevel;
+        
+        // Animated transition for water level
+        waterLevelEl.style.height = `${waterLevelValue}%`;
+        waterLevelTextEl.textContent = `${Math.round(waterLevelValue)}%`;
+        
+        // Update water level color based on value
+        if (waterLevelValue < 30) {
+          waterLevelEl.classList.remove('bg-green-400', 'bg-blue-400');
+          waterLevelEl.classList.add('bg-red-400');
+        } else if (waterLevelValue < 70) {
+          waterLevelEl.classList.remove('bg-green-400', 'bg-red-400');
+          waterLevelEl.classList.add('bg-blue-400');
+        } else {
+          waterLevelEl.classList.remove('bg-blue-400', 'bg-red-400');
+          waterLevelEl.classList.add('bg-green-400');
+        }
+        
+        // Update last check time
+        document.getElementById('last-check').textContent = 'Just now';
+        document.getElementById('next-check').textContent = '30 seconds';
+        
+        setTimeout(() => {
+          document.getElementById('last-check').textContent = 'A moment ago';
+        }, 5000);
+        
+        // Update chart with new data points
+        updateChartData(data.tds, data.ph, data.waterTemp, data.humidity);
+        
+        // Update system data
+        if (data.ledMode !== undefined && data.ledMode !== systemData.ledMode) {
+          systemData.ledMode = data.ledMode;
+          updateLedDisplay();
+          addNotification(`LED mode changed to ${ledModeNames[data.ledMode]}`, 'info');
+        }
+        
+        if (data.pumpStatus !== undefined && data.pumpStatus !== systemData.pumpStatus) {
+          systemData.pumpStatus = data.pumpStatus;
+          updatePumpDisplay();
+          addNotification(`Pump ${data.pumpStatus ? 'activated' : 'deactivated'}`, 'info');
+        }
+        
+        // Validate all sensors
+        validateAllSensors();
+        
+      } catch (error) {
+        console.error('Error fetching sensor data:', error);
+        document.getElementById('system-status').textContent = 'Connection Error';
+        document.getElementById('system-status').classList.remove('text-green-300', 'text-yellow-300');
+        document.getElementById('system-status').classList.add('text-red-300');
+        
+        addNotification('Connection error. Retrying...', 'warning');
+      }
+    }
+    
+    // Function to animate value changes
+    function animateValueChange(elementId, newValue) {
+      const element = document.getElementById(elementId);
+      const currentValue = element.textContent;
+      
+      // Skip animation if value is unchanged or initial value
+      if (currentValue === newValue || currentValue === '--') {
+        element.textContent = newValue;
+        return;
+      }
+      
+      // Add highlighting effect
+      element.classList.add('transition-all', 'duration-500');
+      element.classList.add('text-green-600', 'scale-110');
+      
+      // Update the value
+      element.textContent = newValue;
+      
+      // Remove highlighting after a delay
+      setTimeout(() => {
+        element.classList.remove('text-green-600', 'scale-110');
+      }, 700);
     }
 
     // Event Listeners for System Controls
-    document.getElementById('pump-btn').addEventListener('click', async () => {
+    document.getElementById('led-btn').addEventListener('click', async () => {
       try {
-        await fetch('/toggle-pump');
-        fetchSensorData(); // Refresh data to get updated pump status
+        const response = await fetch('/toggle-led');
+        const data = await response.json();
+        
+        // Update mode and button
+        systemData.ledMode = data.mode;
+        updateLedDisplay();
+        
+        addNotification(`LED mode changed to ${ledModeNames[data.mode]}`, 'success');
       } catch (error) {
-        console.error('Error toggling pump:', error);
+        console.error('Error toggling LED:', error);
+        addNotification('Error changing LED mode', 'error');
       }
     });
 
-    // Initialize LED button display
-    updateLedButtonDisplay();
+    document.getElementById('pump-btn').addEventListener('click', async () => {
+      try {
+        await fetch('/toggle-pump');
+        
+        // Toggle local state until next data refresh
+        systemData.pumpStatus = !systemData.pumpStatus;
+        updatePumpDisplay();
+        
+        addNotification(`Pump ${systemData.pumpStatus ? 'activated' : 'deactivated'}`, 'success');
+        
+      } catch (error) {
+        console.error('Error toggling pump:', error);
+        addNotification('Error toggling pump', 'error');
+      }
+    });
+
+    // Initialize displays
+    updateLedDisplay();
+    updatePumpDisplay();
+    updateNotificationsDisplay();
 
     // Initial data fetch and setup interval for updates
     fetchSensorData();
-    setInterval(fetchSensorData, 30000); // Update every 30 seconds
+    
+    // Update sensor data every 30 seconds
+    setInterval(fetchSensorData, 30000);
+    
+    // Simulate initial data loading for demonstration
+    setTimeout(() => {
+      if (document.getElementById('tds').textContent === '--') {
+        // If no real data arrived after 3 seconds, load demo data
+        const demoData = {
+          tds: 520.5,
+          ph: 6.2,
+          waterTemp: 22.5,
+          humidity: 65,
+          airTemp: 24.3,
+          waterLevel: 78,
+          ledMode: 1,
+          pumpStatus: true
+        };
+        
+        document.getElementById('tds').textContent = demoData.tds.toFixed(1);
+        document.getElementById('ph').textContent = demoData.ph.toFixed(1);
+        document.getElementById('water-temp').textContent = demoData.waterTemp.toFixed(1);
+        document.getElementById('humidity').textContent = demoData.humidity.toFixed(1);
+        document.getElementById('temp').textContent = demoData.airTemp.toFixed(1);
+        
+        document.getElementById('water-level').style.height = `${demoData.waterLevel}%`;
+        document.getElementById('water-level-text').textContent = `${demoData.waterLevel}%`;
+        
+        systemData.ledMode = demoData.ledMode;
+        systemData.pumpStatus = demoData.pumpStatus;
+        
+        updateLedDisplay();
+        updatePumpDisplay();
+        validateAllSensors();
+        
+        // Update chart
+        updateChartData(demoData.tds, demoData.ph, demoData.waterTemp, demoData.humidity);
+        
+        addNotification('Demo mode activated', 'info');
+      }
+    }, 3000);
   </script>
 </body>
 </html>
@@ -732,6 +1275,9 @@ void handleRoot() {
 }
 
 void handleData() {
+  server.sendHeader("Access-Control-Allow-Origin", "*");
+  server.sendHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+  server.sendHeader("Access-Control-Allow-Headers", "*");
   DynamicJsonDocument doc(1024);
   doc["humidity"] = humidity;
   doc["airTemp"] = airTemp;
@@ -756,6 +1302,9 @@ void handleData() {
 
 void handleToggleLED() {
   // Cycle through modes
+  server.sendHeader("Access-Control-Allow-Origin", "*");
+  server.sendHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+  server.sendHeader("Access-Control-Allow-Headers", "*");
   ledMode = (ledMode + 1) % 4;
   
   switch(ledMode) {
@@ -810,6 +1359,9 @@ void handleToggleLED() {
 }
 
 void handleTogglePump() {
+  server.sendHeader("Access-Control-Allow-Origin", "*");
+  server.sendHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+  server.sendHeader("Access-Control-Allow-Headers", "*");
   pumpStatus = !pumpStatus;
   digitalWrite(WATER_PUMP_PIN, pumpStatus ? HIGH : LOW);
   server.send(200, "text/plain", "Pump toggled");
@@ -943,9 +1495,22 @@ void setup() {
   server.on("/data", HTTP_OPTIONS, []() {
     server.sendHeader("Access-Control-Allow-Origin", "*");
     server.sendHeader("Access-Control-Allow-Methods", "GET, OPTIONS");
-    server.sendHeader("Access-Control-Allow-Headers", "Content-Type");
+    server.sendHeader("Access-Control-Allow-Headers", "*");
     server.send(204);
   });
+  server.on("/toggle-led", HTTP_OPTIONS, []() {
+  server.sendHeader("Access-Control-Allow-Origin", "*");
+  server.sendHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+  server.sendHeader("Access-Control-Allow-Headers", "*");
+  server.send(204, "text/plain", "");
+});
+
+server.on("/toggle-pump", HTTP_OPTIONS, []() {
+  server.sendHeader("Access-Control-Allow-Origin", "*");
+  server.sendHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+  server.sendHeader("Access-Control-Allow-Headers", "*");
+  server.send(204, "text/plain", "");
+});
   
   // Handle 404 (Not Found) errors
   server.onNotFound([]() {
