@@ -8,8 +8,12 @@
 #include <WebServer.h>
 #include <SPIFFS.h>
 #include <ArduinoJson.h>
+#include <HTTPClient.h>
+#include <time.h>
+
 
 // Function prototypes
+const char* firebaseHost = "https://hydrobrain-1f3c2-default-rtdb.firebaseio.com";
 void updateTFTDisplay();
 void drawDashboardCard(int x, int y, int width, int height, String title, String value);
 void drawWaterLevelBar(int y);
@@ -29,10 +33,10 @@ void drawStatusIndicator(int x, int y, bool isOn, String label);
 
 // Sensor pins
 #define TDS_PIN 35
-#define PH_PIN 34
+#define pH_PIN 34
 #define TRIG_PIN 14
 #define ECHO_PIN 15
-#define WATER_TEMP_PIN 32
+#define WATER_TEMP_PIN 36
 
 // NeoPixel LED strip settings
 #define LED_PIN 19
@@ -44,8 +48,8 @@ Adafruit_NeoPixel strip(NUM_LEDS, LED_PIN, NEO_GRB + NEO_KHZ800);
 #define WATER_PUMP_PIN 27
 
 // WiFi Credentials
-const char* ssid = "Battal 4G_EXTnew";
-const char* password = "0505169538";
+const char* ssid = "Tuwaiq's employees";
+const char* password = "Bootcamp@001";
 
 // Web Server
 WebServer server(80);
@@ -88,17 +92,22 @@ DHT dht(DHTPIN, DHTTYPE);
 float humidity = 0;
 float airTemp = 0;
 float tds = 0;
+float ec = 0; // EC in μS/cm
 long waterLevel = 0;
 float pH = 0;
 float waterTemp = 0;
 bool ledStatus = false;
 bool pumpStatus = false;
 unsigned long lastCheck = 0;
+// Add this at the top of your code where other global variables are defined
+bool useFakeData = true; // Set to true to use fake data, false to use real sensors
+unsigned long lastFakeDataUpdate = 0;
 
 // Global variable to track LED mode
 int ledMode = 0; // 0: Off, 1: Sun Mode, 2: Relaxing Mode, 3: Sleeping Mode
 
-// Include the entire HTML content (same as previous code)
+// Include the entire HTML content 
+// Include the entire HTML content 
 const char index_html[] PROGMEM = R"rawliteral(
 <!DOCTYPE html>
 <html lang="en">
@@ -111,8 +120,7 @@ const char index_html[] PROGMEM = R"rawliteral(
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
   <style>
     body {
-      background: url('/images/back.png') no-repeat center center fixed;
-      background-size: cover;
+    background: linear-gradient(to bottom right, #e8f5e9, #d0f0e0);
     }
     .bg-card {
       background-color: rgba(255, 255, 255, 0.9) !important;
@@ -240,6 +248,10 @@ const char index_html[] PROGMEM = R"rawliteral(
       background-color: rgba(16, 185, 129, 0.1);
       border-left: 3px solid #10b981;
     }
+    .notification-item.warning {
+      background-color: rgba(245, 158, 11, 0.1);
+      border-left: 3px solid #f59e0b;
+    }
     .pulse {
       animation: pulse 2s infinite;
     }
@@ -256,6 +268,18 @@ const char index_html[] PROGMEM = R"rawliteral(
         transform: scale(0.95);
         box-shadow: 0 0 0 0 rgba(16, 185, 129, 0);
       }
+    }
+    .plant-btn {
+      transition: all 0.2s ease;
+    }
+    .plant-btn.active {
+      background-color: #047857;
+      color: white;
+      transform: scale(1.05);
+    }
+    .plant-btn:hover:not(.active) {
+      background-color: #d1fae5;
+      transform: translateY(-2px);
     }
   </style>
 </head>
@@ -282,6 +306,33 @@ const char index_html[] PROGMEM = R"rawliteral(
       </div>
     </div>
 
+    <!-- Plant Selection Section -->
+    <div class="p-4 bg-header text-white border-b border-green-100">
+      <div class="flex flex-col md:flex-row justify-between items-center">
+        <h2 class="text-lg font-semibold text-green-200 mb-3 md:mb-0">
+          <i class="fas fa-seedling mr-2"></i>
+          Select Plant Type
+        </h2>
+        <div class="flex space-x-3">
+          <button type="button" onclick="updatePlantProfile('mint')" class="plant-btn px-6 py-2 bg-white rounded-lg shadow-sm border border-green-300 text-green-800 font-medium active" id="mint-btn">
+            Mint
+          </button>
+          <button type="button" onclick="updatePlantProfile('lettuce')" class="plant-btn px-6 py-2 bg-white rounded-lg shadow-sm border border-green-300 text-green-800 font-medium" id="lettuce-btn">
+            Lettuce
+          </button>
+          <button type="button" onclick="updatePlantProfile('strawberry')" class="plant-btn px-6 py-2 bg-white rounded-lg shadow-sm border border-green-300 text-green-800 font-medium" id="strawberry-btn">
+            Strawberry
+          </button>
+        </div>
+      </div>
+      <div class="mt-3 text-sm md:text-base text-green-200 text-center font-medium">
+        <span class="text-white">Selected:</span> <span id="current-plant" class="text-white">Mint</span> - 
+        <span id="plant-description" class="text-green-200">Optimal for essential oil production, requires moderate nutrients and warm water.</span>
+      </div>
+    </div>
+        <button onclick="openAddPlantForm()" class="plant-btn px-6 py-2 bg-green-100 border border-green-300 rounded-lg text-green-700 font-medium">
+          + Add Plant
+        </button>
     <!-- Dashboard Grid -->
     <div class="grid md:grid-cols-3 gap-6 p-6">
       <!-- Main Content Area - Sensor Cards -->
@@ -300,24 +351,42 @@ const char index_html[] PROGMEM = R"rawliteral(
               <span class="sensor-value text-gray-800" id="tds">--</span>
               <span class="text-sm text-gray-500 ml-1 mb-1">ppm</span>
             </div>
-            <div class="mt-2 text-xs text-gray-500">Optimal: 400-600 ppm</div>
+            <div class="mt-2 text-xs text-gray-500">Optimal: <span id="tds-range">400-600 ppm</span></div>
+          </div>
+        </div>
+        
+        <!-- EC Card -->
+        <div class="sensor-card bg-card p-4 rounded-lg shadow-md optimal" id="ec-card">
+          <div class="flex justify-between items-start">
+            <h3 class="text-sm font-semibold text-gray-700 flex items-center">
+              <i class="fas fa-bolt mr-2"></i>
+              EC
+            </h3>
+            <span class="status-badge optimal" id="ec-status">Optimal</span>
+          </div>
+          <div class="mt-3">
+            <div class="flex items-end">
+              <span class="sensor-value text-gray-800" id="ec">--</span>
+              <span class="text-sm text-gray-500 ml-1 mb-1">μS/cm</span>
+            </div>
+            <div class="mt-2 text-xs text-gray-500">Optimal: <span id="ec-range">800-1200 μS/cm</span></div>
           </div>
         </div>
 
         <!-- pH Card -->
-        <div class="sensor-card bg-card p-4 rounded-lg shadow-md optimal" id="ph-card">
+        <div class="sensor-card bg-card p-4 rounded-lg shadow-md optimal" id="pH-card">
           <div class="flex justify-between items-start">
             <h3 class="text-sm font-semibold text-gray-700 flex items-center">
               <i class="fas fa-vial mr-2"></i>
               pH Level
             </h3>
-            <span class="status-badge optimal" id="ph-status">Optimal</span>
+            <span class="status-badge optimal" id="pH-status">Optimal</span>
           </div>
           <div class="mt-3">
             <div class="flex items-end">
-              <span class="sensor-value text-gray-800" id="ph">--</span>
+              <span class="sensor-value text-gray-800" id="pH">--</span>
             </div>
-            <div class="mt-2 text-xs text-gray-500">Optimal: 5.5-6.5</div>
+            <div class="mt-2 text-xs text-gray-500">Optimal: <span id="pH-range">5.5-6.5</span></div>
           </div>
         </div>
 
@@ -335,7 +404,7 @@ const char index_html[] PROGMEM = R"rawliteral(
               <span class="sensor-value text-gray-800" id="water-temp">--</span>
               <span class="text-sm text-gray-500 ml-1 mb-1">°C</span>
             </div>
-            <div class="mt-2 text-xs text-gray-500">Optimal: 20-25 °C</div>
+            <div class="mt-2 text-xs text-gray-500">Optimal: <span id="water-temp-range">20-25 °C</span></div>
           </div>
         </div>
 
@@ -353,7 +422,7 @@ const char index_html[] PROGMEM = R"rawliteral(
               <span class="sensor-value text-gray-800" id="humidity">--</span>
               <span class="text-sm text-gray-500 ml-1 mb-1">%</span>
             </div>
-            <div class="mt-2 text-xs text-gray-500">Optimal: 55-70%</div>
+            <div class="mt-2 text-xs text-gray-500">Optimal: <span id="humidity-range">55-70%</span></div>
           </div>
         </div>
 
@@ -371,12 +440,12 @@ const char index_html[] PROGMEM = R"rawliteral(
               <span class="sensor-value text-gray-800" id="temp">--</span>
               <span class="text-sm text-gray-500 ml-1 mb-1">°C</span>
             </div>
-            <div class="mt-2 text-xs text-gray-500">Optimal: 22-28 °C</div>
+            <div class="mt-2 text-xs text-gray-500">Optimal: <span id="temp-range">22-28 °C</span></div>
           </div>
         </div>
 
         <!-- Nutrient Tank Level with improved visuals -->
-        <div class="bg-card p-4 rounded-lg shadow-md" id="water-level-card">
+        <div class="bg-card p-4 rounded-lg shadow-md col-span-2 md:col-span-3" id="water-level-card">
           <h3 class="text-sm font-semibold text-gray-700 flex items-center">
             <i class="fas fa-fill-drip mr-2"></i>
             Nutrient Tank
@@ -487,7 +556,7 @@ const char index_html[] PROGMEM = R"rawliteral(
           <div class="space-y-2 text-xs">
             <div class="flex justify-between">
               <span class="text-gray-500">System Version</span>
-              <span class="font-medium">HydroOS 1.2.0</span>
+              <span class="font-medium">HydroOS 1.3.0</span>
             </div>
             <div class="flex justify-between">
               <span class="text-gray-500">Uptime</span>
@@ -498,8 +567,8 @@ const char index_html[] PROGMEM = R"rawliteral(
               <span class="font-medium">5 / 5 Online</span>
             </div>
             <div class="flex justify-between">
-              <span class="text-gray-500">Plants Growing</span>
-              <span class="font-medium">Basil, Lettuce, Mint</span>
+              <span class="text-gray-500">Current Plant</span>
+              <span class="font-medium" id="current-plant-info">Mint</span>
             </div>
           </div>
         </div>
@@ -524,7 +593,7 @@ const char index_html[] PROGMEM = R"rawliteral(
         HydroBrain Dashboard • Professional Edition
       </div>
       <div class="text-green-300 mt-2 md:mt-0">
-        © 2025 Sultan Al-Jarboa • Version 1.2.0
+        © 2025 <a href="https://www.linkedin.com/in/sultanal-jrboa/" target="_blank" class="underline hover:text-green-200 transition">Sultan Al-Jarboa</a> • Version 1.3.0
       </div>
     </div>
   </div>
@@ -535,11 +604,136 @@ const char index_html[] PROGMEM = R"rawliteral(
       ledMode: 0,
       pumpStatus: false,
       bootTime: new Date().getTime(),
+      currentPlant: 'mint',
       notifications: [
         { message: "System initialized", type: "info", time: formatTime(new Date()) }
       ]
     };
     
+    // Plant profiles with optimal ranges
+    // Plant profiles with optimal ranges
+    const plantProfiles = {
+      lettuce: {
+        name: "Lettuce",
+        description: "Fast-growing leafy green, prefers cooler temperatures and moderate nutrients.",
+        tds: { min: 560, max: 840 },
+        ec: { min: 1100, max: 1700 },
+        pH: { min: 5.5, max: 6.5 },
+        waterTemp: { min: 18, max: 22 },
+        humidity: { min: 50, max: 70 },
+        airTemp: { min: 16, max: 24 }
+      },
+      basil: {
+        name: "Basil",
+        description: "Fragrant herb used in cooking, thrives in warm nutrient-rich environments.",
+        tds: { min: 560, max: 700 },
+        ec: { min: 1100, max: 1400 },
+        pH: { min: 5.5, max: 6.5 },
+        waterTemp: { min: 22, max: 26 },
+        humidity: { min: 50, max: 60 },
+        airTemp: { min: 20, max: 28 }
+      },
+      mint: {
+        name: "Mint",
+        description: "Optimal for essential oil production, requires moderate nutrients and warm water.",
+        tds: { min: 400, max: 600 },
+        ec: { min: 800, max: 1200 },
+        pH: { min: 5.5, max: 6.5 },
+        waterTemp: { min: 20, max: 25 },
+        humidity: { min: 55, max: 70 },
+        airTemp: { min: 22, max: 28 }
+      },
+      strawberry: {
+        name: "Strawberry",
+        description: "Fruit-bearing plant that requires higher nutrient concentration and humidity.",
+        tds: { min: 560, max: 1120 },
+        ec: { min: 1120, max: 2240 },
+        pH: { min: 5.5, max: 6.5 },
+        waterTemp: { min: 18, max: 24 },
+        humidity: { min: 70, max: 80 },
+        airTemp: { min: 18, max: 24 }
+      },
+      tomato: {
+        name: "Tomato",
+        description: "Requires strong light and nutrients; ideal for fruiting hydroponic setups.",
+        tds: { min: 1400, max: 3500 },
+        ec: { min: 2000, max: 5000 },
+        pH: { min: 5.5, max: 6.5 },
+        waterTemp: { min: 20, max: 26 },
+        humidity: { min: 60, max: 70 },
+        airTemp: { min: 18, max: 26 }
+      },
+      cucumber: {
+        name: "Cucumber",
+        description: "Vine plant that needs support and high nutrient flow.",
+        tds: { min: 1190, max: 1750 },
+        ec: { min: 1700, max: 2500 },
+        pH: { min: 5.5, max: 6.0 },
+        waterTemp: { min: 22, max: 26 },
+        humidity: { min: 60, max: 70 },
+        airTemp: { min: 20, max: 28 }
+      },
+      spinach: {
+        name: "Spinach",
+        description: "Cool-season crop requiring slightly higher EC and pH values.",
+        tds: { min: 1260, max: 1610 },
+        ec: { min: 1800, max: 2300 },
+        pH: { min: 6.0, max: 7.0 },
+        waterTemp: { min: 16, max: 22 },
+        humidity: { min: 60, max: 70 },
+        airTemp: { min: 18, max: 24 }
+      },
+      arugula: {
+        name: "Arugula",
+        description: "Peppery leaf vegetable; fast growing and nutrient hungry.",
+        tds: { min: 980, max: 1260 },
+        ec: { min: 1400, max: 1800 },
+        pH: { min: 6.0, max: 7.0 },
+        waterTemp: { min: 18, max: 22 },
+        humidity: { min: 60, max: 70 },
+        airTemp: { min: 18, max: 26 }
+      },
+      kale: {
+        name: "Kale",
+        description: "Hardy leafy green, tolerates cooler temperatures well.",
+        tds: { min: 1050, max: 1400 },
+        ec: { min: 1500, max: 2000 },
+        pH: { min: 6.0, max: 7.5 },
+        waterTemp: { min: 16, max: 22 },
+        humidity: { min: 55, max: 70 },
+        airTemp: { min: 16, max: 26 }
+      },
+      parsley: {
+        name: "Parsley",
+        description: "Mild herb used fresh or dried; thrives in moderate environments.",
+        tds: { min: 560, max: 1260 },
+        ec: { min: 1100, max: 1800 },
+        pH: { min: 5.5, max: 6.0 },
+        waterTemp: { min: 20, max: 26 },
+        humidity: { min: 60, max: 70 },
+        airTemp: { min: 18, max: 26 }
+      },
+      coriander: {
+        name: "Coriander",
+        description: "Fresh herb with dual uses: leaves (cilantro) and seeds.",
+        tds: { min: 700, max: 1260 },
+        ec: { min: 1400, max: 1800 },
+        pH: { min: 6.0, max: 6.8 },
+        waterTemp: { min: 18, max: 24 },
+        humidity: { min: 60, max: 70 },
+        airTemp: { min: 18, max: 25 }
+      },
+      chives: {
+        name: "Chives",
+        description: "Thin-leaved herb from the onion family; delicate flavor.",
+        tds: { min: 980, max: 1260 },
+        ec: { min: 1400, max: 1800 },
+        pH: { min: 6.0, max: 6.5 },
+        waterTemp: { min: 18, max: 24 },
+        humidity: { min: 60, max: 75 },
+        airTemp: { min: 18, max: 25 }
+      }
+      };   
     // LED Mode Names
     const ledModeNames = ['Off', 'Sun Mode', 'Relaxing Mode', 'Sleeping Mode'];
     const ledModeDescriptions = [
@@ -578,6 +772,40 @@ const char index_html[] PROGMEM = R"rawliteral(
     setInterval(updateDateTime, 1000);
     updateDateTime();
 
+    // Function to update plant profile display
+    function updatePlantProfile(plantType) {
+      const profile = plantProfiles[plantType];
+      if (!profile) return;
+      
+      systemData.currentPlant = plantType;
+      
+      // Update UI elements
+      document.getElementById('current-plant').textContent = profile.name;
+      document.getElementById('current-plant-info').textContent = profile.name;
+      document.getElementById('plant-description').textContent = profile.description;
+      
+      // Update optimal ranges in UI
+      document.getElementById('tds-range').textContent = `${profile.tds.min}-${profile.tds.max} ppm`;
+      document.getElementById('ec-range').textContent = `${profile.ec.min}-${profile.ec.max} μS/cm`; // Add EC range
+      document.getElementById('pH-range').textContent = `${profile.pH.min}-${profile.pH.max}`;
+      document.getElementById('water-temp-range').textContent = `${profile.waterTemp.min}-${profile.waterTemp.max} °C`;
+      document.getElementById('humidity-range').textContent = `${profile.humidity.min}-${profile.humidity.max}%`;
+      document.getElementById('temp-range').textContent = `${profile.airTemp.min}-${profile.airTemp.max} °C`;
+          
+      // Update button states
+      document.querySelectorAll('.plant-btn').forEach(btn => {
+        btn.classList.remove('active');
+      });
+      
+      document.getElementById(`${plantType}-btn`).classList.add('active');
+      
+      // Revalidate sensors with new ranges
+      validateAllSensors();
+      
+      // Add notification
+      addNotification(`Plant profile changed to ${profile.name}`, 'success');
+    }
+
     // Sensor Validation and Status
     function validateSensor(value, minValue, maxValue, elementId, statusElementId) {
       if (isNaN(value) || value === null) return;
@@ -607,19 +835,24 @@ const char index_html[] PROGMEM = R"rawliteral(
       statusElement.textContent = statusText;
     }
 
-    // Function to validate all sensor readings
+    // Function to validate all sensor readings based on current plant profile
     function validateAllSensors() {
-      const tdsValue = parseFloat(document.getElementById('tds').textContent);
-      const phValue = parseFloat(document.getElementById('ph').textContent);
-      const waterTempValue = parseFloat(document.getElementById('water-temp').textContent);
-      const humidityValue = parseFloat(document.getElementById('humidity').textContent);
-      const airTempValue = parseFloat(document.getElementById('temp').textContent);
-      
-      validateSensor(tdsValue, 400, 600, 'tds', 'tds-status');
-      validateSensor(phValue, 5.5, 6.5, 'ph', 'ph-status');
-      validateSensor(waterTempValue, 20, 25, 'water-temp', 'water-temp-status');
-      validateSensor(humidityValue, 55, 70, 'humidity', 'humidity-status');
-      validateSensor(airTempValue, 22, 28, 'temp', 'temp-status');
+      const profile = plantProfiles[systemData.currentPlant];
+      if (!profile) return;
+
+      const tds = parseFloat(document.getElementById('tds').textContent.replace(/[^\d.-]/g, ''));
+      const ecValue = parseFloat(document.getElementById('ec').textContent.replace(/[^\d.-]/g, ''));
+      const pHValue = parseFloat(document.getElementById('pH').textContent.replace(/[^\d.-]/g, ''));
+      const waterTempValue = parseFloat(document.getElementById('water-temp').textContent.replace(/[^\d.-]/g, ''));
+      const humidityValue = parseFloat(document.getElementById('humidity').textContent.replace(/[^\d.-]/g, ''));
+      const airTempValue = parseFloat(document.getElementById('temp').textContent.replace(/[^\d.-]/g, ''));
+
+      validateSensor(tds, profile.tds.min, profile.tds.max, 'tds', 'tds-status');
+      validateSensor(ecValue, profile.ec.min, profile.ec.max, 'ec', 'ec-status');
+      validateSensor(pHValue, profile.pH.min, profile.pH.max, 'pH', 'pH-status');
+      validateSensor(waterTempValue, profile.waterTemp.min, profile.waterTemp.max, 'water-temp', 'water-temp-status');
+      validateSensor(humidityValue, profile.humidity.min, profile.humidity.max, 'humidity', 'humidity-status');
+      validateSensor(airTempValue, profile.airTemp.min, profile.airTemp.max, 'temp', 'temp-status');
     }
 
     // Update LED status display
@@ -717,6 +950,14 @@ const char index_html[] PROGMEM = R"rawliteral(
             borderWidth: 2
           },
           { 
+            label: 'EC', 
+            data: [0, 0, 0, 0, 0], 
+            borderColor: 'rgba(249, 115, 22, 0.7)', 
+            backgroundColor: 'rgba(249, 115, 22, 0.1)',
+            tension: 0.4,
+            borderWidth: 2
+          },
+          { 
             label: 'pH', 
             data: [0, 0, 0, 0, 0], 
             borderColor: 'rgba(37, 99, 235, 0.7)', 
@@ -807,35 +1048,151 @@ const char index_html[] PROGMEM = R"rawliteral(
     });
 
     // Function to update chart data
-    function updateChartData(tdsValue, phValue, waterTempValue, humidityValue) {
-      const chart = sensorChart;
-      const currentTime = new Date().toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'});
-      
-      // Shift labels
-      chart.data.labels.shift();
-      chart.data.labels.push(currentTime);
+  function updateChartData(tds, ecValue, pHValue, waterTempValue, humidityValue) {
+    const chart = sensorChart;
+    const currentTime = new Date().toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'});
+    
+    // Shift labels
+    chart.data.labels.shift();
+    chart.data.labels.push(currentTime);
 
-      // Update each dataset
-      chart.data.datasets[0].data.shift();
-      chart.data.datasets[0].data.push(tdsValue);
+    // Update each dataset with proper parameters
+    // Dataset 0: TDS
+    chart.data.datasets[0].data.shift();
+    chart.data.datasets[0].data.push(tds);
 
-      chart.data.datasets[1].data.shift();
-      chart.data.datasets[1].data.push(parseFloat(phValue));
+    // Dataset 1: EC
+    chart.data.datasets[1].data.shift();
+    chart.data.datasets[1].data.push(ecValue);
 
-      chart.data.datasets[2].data.shift();
-      chart.data.datasets[2].data.push(parseFloat(waterTempValue));
+    // Dataset 2: pH
+    chart.data.datasets[2].data.shift();
+    chart.data.datasets[2].data.push(pHValue);
 
-      chart.data.datasets[3].data.shift();
-      chart.data.datasets[3].data.push(humidityValue);
+    // Dataset 3: Water Temp
+    chart.data.datasets[3].data.shift();
+    chart.data.datasets[3].data.push(waterTempValue);
 
-      chart.update('none'); // Use 'none' for smoother updates
-    }
+    // Dataset 4: Humidity
+    chart.data.datasets[4].data.shift();
+    chart.data.datasets[4].data.push(humidityValue);
+
+    chart.update('none'); // Use 'none' for smoother updates
+  }
 
     // Function to fetch sensor data from ESP32
     async function fetchSensorData() {
+  try {
+    const response = await fetch('/data');
+    const data = await response.json();
+    
+    // Debug log to see what's being received
+    console.log("Data received from ESP32:", data);
+    
+    // First check if connection is good by presence of data
+    if (!data) throw new Error('No data received');
+    
+    // Update system status to online with pulse animation
+    document.getElementById('system-status').textContent = 'Operational';
+    document.getElementById('system-status').classList.remove('text-yellow-300', 'text-red-300');
+    document.getElementById('system-status').classList.add('text-green-300');
+    
+    // Update sensor displays with animation - add null/undefined checks
+    if (data.tds !== undefined && data.tds !== null) {
+      animateValueChange('tds', parseFloat(data.tds).toFixed(1));
+    }
+    
+    if (data.ec !== undefined && data.ec !== null) {
+      animateValueChange('ec', parseFloat(data.ec).toFixed(1));
+    }
+    
+    if (data.pH !== undefined && data.pH !== null) {
+      animateValueChange('pH', parseFloat(data.pH).toFixed(1));
+    }
+    
+    if (data.waterTemp !== undefined && data.waterTemp !== null) {
+      animateValueChange('water-temp', parseFloat(data.waterTemp).toFixed(1));
+    }
+    
+    if (data.humidity !== undefined && data.humidity !== null) {
+      animateValueChange('humidity', parseFloat(data.humidity).toFixed(1));
+    }
+    
+    if (data.airTemp !== undefined && data.airTemp !== null) {
+      animateValueChange('temp', parseFloat(data.airTemp).toFixed(1));
+    }
+    
+    // Update water level display with smooth animation
+    if (data.waterLevel !== undefined && data.waterLevel !== null) {
+      const waterLevelEl = document.getElementById('water-level');
+      const waterLevelTextEl = document.getElementById('water-level-text');
+      const waterLevelValue = parseFloat(data.waterLevel);
+      
+      // Animated transition for water level
+      waterLevelEl.style.height = `${waterLevelValue}%`;
+      waterLevelTextEl.textContent = `${Math.round(waterLevelValue)}%`;
+      
+      // Update water level color based on value
+      if (waterLevelValue < 30) {
+        waterLevelEl.classList.remove('bg-green-400', 'bg-blue-400');
+        waterLevelEl.classList.add('bg-red-400');
+      } else if (waterLevelValue < 70) {
+        waterLevelEl.classList.remove('bg-green-400', 'bg-red-400');
+        waterLevelEl.classList.add('bg-blue-400');
+      } else {
+        waterLevelEl.classList.remove('bg-blue-400', 'bg-red-400');
+        waterLevelEl.classList.add('bg-green-400');
+      }
+    }
+    
+    // Update last check time
+    document.getElementById('last-check').textContent = 'Just now';
+    document.getElementById('next-check').textContent = '30 seconds';
+    
+    setTimeout(() => {
+      document.getElementById('last-check').textContent = 'A moment ago';
+    }, 5000);
+    
+    // Update chart with new data points - ensure all values exist
+    const tdsValue = data.tds !== undefined ? parseFloat(data.tds) : 0;
+    const ecValue = data.ec !== undefined ? parseFloat(data.ec) : 0;
+    const pHValue = data.pH !== undefined ? parseFloat(data.pH) : 0;
+    const waterTempValue = data.waterTemp !== undefined ? parseFloat(data.waterTemp) : 0;
+    const humidityValue = data.humidity !== undefined ? parseFloat(data.humidity) : 0;
+    
+    updateChartData(tdsValue, ecValue, pHValue, waterTempValue, humidityValue);
+    
+    // Update system data
+    if (data.ledMode !== undefined && data.ledMode !== systemData.ledMode) {
+      systemData.ledMode = data.ledMode;
+      updateLedDisplay();
+      addNotification(`LED mode changed to ${ledModeNames[data.ledMode]}`, 'info');
+    }
+    
+    if (data.pumpStatus !== undefined && data.pumpStatus !== systemData.pumpStatus) {
+      systemData.pumpStatus = data.pumpStatus;
+      updatePumpDisplay();
+      addNotification(`Pump ${data.pumpStatus ? 'activated' : 'deactivated'}`, 'info');
+    }
+    
+    // Validate all sensors
+    validateAllSensors();
+    
+  } catch (error) {
+    console.error('Error fetching sensor data:', error);
+    document.getElementById('system-status').textContent = 'Connection Error';
+    document.getElementById('system-status').classList.remove('text-green-300', 'text-yellow-300');
+    document.getElementById('system-status').classList.add('text-red-300');
+    
+    addNotification('Connection error. Retrying...', 'warning');
+  }
+    }async function fetchSensorData() {
       try {
         const response = await fetch('/data');
         const data = await response.json();
+        
+        // Debug log to see what's being received
+        console.log("Data received from ESP32:", data);
         
         // First check if connection is good by presence of data
         if (!data) throw new Error('No data received');
@@ -845,32 +1202,52 @@ const char index_html[] PROGMEM = R"rawliteral(
         document.getElementById('system-status').classList.remove('text-yellow-300', 'text-red-300');
         document.getElementById('system-status').classList.add('text-green-300');
         
-        // Update sensor displays with animation
-        animateValueChange('tds', data.tds.toFixed(1));
-        animateValueChange('ph', data.ph.toFixed(1));
-        animateValueChange('water-temp', data.waterTemp.toFixed(1));
-        animateValueChange('humidity', data.humidity.toFixed(1));
-        animateValueChange('temp', data.airTemp.toFixed(1));
+        // Update sensor displays with animation - add null/undefined checks
+        if (data.tds !== undefined && data.tds !== null) {
+          animateValueChange('tds', parseFloat(data.tds).toFixed(1));
+        }
+        
+        if (data.ec !== undefined && data.ec !== null) {
+          animateValueChange('ec', parseFloat(data.ec).toFixed(1));
+        }
+        
+        if (data.pH !== undefined && data.pH !== null) {
+          animateValueChange('pH', parseFloat(data.pH).toFixed(1));
+        }
+        
+        if (data.waterTemp !== undefined && data.waterTemp !== null) {
+          animateValueChange('water-temp', parseFloat(data.waterTemp).toFixed(1));
+        }
+        
+        if (data.humidity !== undefined && data.humidity !== null) {
+          animateValueChange('humidity', parseFloat(data.humidity).toFixed(1));
+        }
+        
+        if (data.airTemp !== undefined && data.airTemp !== null) {
+          animateValueChange('temp', parseFloat(data.airTemp).toFixed(1));
+        }
         
         // Update water level display with smooth animation
-        const waterLevelEl = document.getElementById('water-level');
-        const waterLevelTextEl = document.getElementById('water-level-text');
-        const waterLevelValue = data.waterLevel;
-        
-        // Animated transition for water level
-        waterLevelEl.style.height = `${waterLevelValue}%`;
-        waterLevelTextEl.textContent = `${Math.round(waterLevelValue)}%`;
-        
-        // Update water level color based on value
-        if (waterLevelValue < 30) {
-          waterLevelEl.classList.remove('bg-green-400', 'bg-blue-400');
-          waterLevelEl.classList.add('bg-red-400');
-        } else if (waterLevelValue < 70) {
-          waterLevelEl.classList.remove('bg-green-400', 'bg-red-400');
-          waterLevelEl.classList.add('bg-blue-400');
-        } else {
-          waterLevelEl.classList.remove('bg-blue-400', 'bg-red-400');
-          waterLevelEl.classList.add('bg-green-400');
+        if (data.waterLevel !== undefined && data.waterLevel !== null) {
+          const waterLevelEl = document.getElementById('water-level');
+          const waterLevelTextEl = document.getElementById('water-level-text');
+          const waterLevelValue = parseFloat(data.waterLevel);
+          
+          // Animated transition for water level
+          waterLevelEl.style.height = `${waterLevelValue}%`;
+          waterLevelTextEl.textContent = `${Math.round(waterLevelValue)}%`;
+          
+          // Update water level color based on value
+          if (waterLevelValue < 30) {
+            waterLevelEl.classList.remove('bg-green-400', 'bg-blue-400');
+            waterLevelEl.classList.add('bg-red-400');
+          } else if (waterLevelValue < 70) {
+            waterLevelEl.classList.remove('bg-green-400', 'bg-red-400');
+            waterLevelEl.classList.add('bg-blue-400');
+          } else {
+            waterLevelEl.classList.remove('bg-blue-400', 'bg-red-400');
+            waterLevelEl.classList.add('bg-green-400');
+          }
         }
         
         // Update last check time
@@ -881,8 +1258,14 @@ const char index_html[] PROGMEM = R"rawliteral(
           document.getElementById('last-check').textContent = 'A moment ago';
         }, 5000);
         
-        // Update chart with new data points
-        updateChartData(data.tds, data.ph, data.waterTemp, data.humidity);
+        // Update chart with new data points - ensure all values exist
+        const tdsValue = data.tds !== undefined ? parseFloat(data.tds) : 0;
+        const ecValue = data.ec !== undefined ? parseFloat(data.ec) : 0;
+        const pHValue = data.pH !== undefined ? parseFloat(data.pH) : 0;
+        const waterTempValue = data.waterTemp !== undefined ? parseFloat(data.waterTemp) : 0;
+        const humidityValue = data.humidity !== undefined ? parseFloat(data.humidity) : 0;
+        
+        updateChartData(tdsValue, ecValue, pHValue, waterTempValue, humidityValue);
         
         // Update system data
         if (data.ledMode !== undefined && data.ledMode !== systemData.ledMode) {
@@ -984,7 +1367,8 @@ const char index_html[] PROGMEM = R"rawliteral(
         // If no real data arrived after 3 seconds, load demo data
         const demoData = {
           tds: 520.5,
-          ph: 6.2,
+          ec: 1041.0, // EC value (TDS * 2)
+          pH: 6.2,
           waterTemp: 22.5,
           humidity: 65,
           airTemp: 24.3,
@@ -994,7 +1378,8 @@ const char index_html[] PROGMEM = R"rawliteral(
         };
         
         document.getElementById('tds').textContent = demoData.tds.toFixed(1);
-        document.getElementById('ph').textContent = demoData.ph.toFixed(1);
+        document.getElementById('pH').textContent = demoData.pH.toFixed(1);
+        document.getElementById('ec').textContent = demoData.ec.toFixed(1);
         document.getElementById('water-temp').textContent = demoData.waterTemp.toFixed(1);
         document.getElementById('humidity').textContent = demoData.humidity.toFixed(1);
         document.getElementById('temp').textContent = demoData.airTemp.toFixed(1);
@@ -1010,38 +1395,231 @@ const char index_html[] PROGMEM = R"rawliteral(
         validateAllSensors();
         
         // Update chart
-        updateChartData(demoData.tds, demoData.ph, demoData.waterTemp, demoData.humidity);
+          updateChartData(demoData.tds, demoData.ec, demoData.pH, demoData.waterTemp, demoData.humidity);
         
         addNotification('Demo mode activated', 'info');
       }
     }, 3000);
+      function addNewPlantProfile() {
+    const name = document.getElementById('new-name').value.trim().toLowerCase();
+    if (!name) return alert("Please enter a valid name");
+
+    const lowerName = name.toLowerCase();
+    plantProfiles[lowerName] = {
+      name: document.getElementById('new-name').value.trim(),
+      description: document.getElementById('new-desc').value.trim(),
+      tds: { min: parseFloat(document.getElementById('new-tds-min').value), max: parseFloat(document.getElementById('new-tds-max').value) },
+      ec: { min: parseFloat(document.getElementById('new-ec-min').value), max: parseFloat(document.getElementById('new-ec-max').value) },
+      pH: { min: parseFloat(document.getElementById('new-ph-min').value), max: parseFloat(document.getElementById('new-ph-max').value) },
+      waterTemp: { min: parseFloat(document.getElementById('new-water-min').value), max: parseFloat(document.getElementById('new-water-max').value) },
+      humidity: { min: parseFloat(document.getElementById('new-humidity-min').value), max: parseFloat(document.getElementById('new-humidity-max').value) },
+      airTemp: { min: parseFloat(document.getElementById('new-air-min').value), max: parseFloat(document.getElementById('new-air-max').value) }
+    };
+
+    // إضافة زر جديد في القائمة:
+    const newBtn = document.createElement('button');
+    newBtn.className = 'plant-btn px-6 py-2 bg-white rounded-lg shadow-sm border border-green-300 text-green-800 font-medium';
+    newBtn.textContent = plantProfiles[lowerName].name;
+    newBtn.onclick = () => updatePlantProfile(name);
+    document.querySelector('.flex.space-x-3').appendChild(newBtn);
+
+    closeAddPlantForm();
+    updatePlantProfile(name); // اختيارها مباشرة بعد الإضافة
+    addNotification(`Added new plant: ${plantProfiles[name].name}`, 'success');
+  }
+  function openAddPlantForm() {
+    document.getElementById('add-plant-modal').classList.remove('hidden');
+  }
+
+  function closeAddPlantForm() {
+    document.getElementById('add-plant-modal').classList.add('hidden');
+  }
+  // Fill form fields automatically when plant name matches
+window.addEventListener("DOMContentLoaded", () => {
+  const nameInput = document.getElementById("new-name");
+
+  nameInput.addEventListener("input", function () {
+    const inputName = this.value.trim().toLowerCase();
+    const profile = plantProfiles[inputName];
+
+    if (profile) {
+      document.getElementById("new-desc").value = profile.description || '';
+      document.getElementById("new-tds-min").value = profile.tds.min || '';
+      document.getElementById("new-tds-max").value = profile.tds.max || '';
+      document.getElementById("new-ec-min").value = profile.ec.min || '';
+      document.getElementById("new-ec-max").value = profile.ec.max || '';
+      document.getElementById("new-ph-min").value = profile.pH.min || '';
+      document.getElementById("new-ph-max").value = profile.pH.max || '';
+      document.getElementById("new-water-min").value = profile.waterTemp.min || '';
+      document.getElementById("new-water-max").value = profile.waterTemp.max || '';
+      document.getElementById("new-humidity-min").value = profile.humidity.min || '';
+      document.getElementById("new-humidity-max").value = profile.humidity.max || '';
+      document.getElementById("new-air-min").value = profile.airTemp.min || '';
+      document.getElementById("new-air-max").value = profile.airTemp.max || '';
+    }
+  });
+});
+
+
   </script>
+<!-- نموذج إضافة نبات جديد -->
+<div id="add-plant-modal" class="fixed inset-0 bg-black bg-opacity-40 flex items-center justify-center hidden z-50">
+  <div class="bg-white rounded-lg p-6 w-full max-w-md shadow-lg">
+    <h2 class="text-xl font-bold text-gray-800 mb-4">Add New Plant Profile</h2>
+    <div class="grid grid-cols-2 gap-4 text-sm">
+      <input type="text" placeholder="Plant Name" id="new-name" class="border rounded p-2" />
+      <input type="text" placeholder="Description" id="new-desc" class="border rounded p-2 col-span-2" />
+      <input type="number" placeholder="TDS Min" id="new-tds-min" class="border rounded p-2" />
+      <input type="number" placeholder="TDS Max" id="new-tds-max" class="border rounded p-2" />
+      <input type="number" placeholder="EC Min" id="new-ec-min" class="border rounded p-2" />
+      <input type="number" placeholder="EC Max" id="new-ec-max" class="border rounded p-2" />
+      <input type="number" placeholder="pH Min" id="new-ph-min" class="border rounded p-2" />
+      <input type="number" placeholder="pH Max" id="new-ph-max" class="border rounded p-2" />
+      <input type="number" placeholder="Water Temp Min" id="new-water-min" class="border rounded p-2" />
+      <input type="number" placeholder="Water Temp Max" id="new-water-max" class="border rounded p-2" />
+      <input type="number" placeholder="Humidity Min" id="new-humidity-min" class="border rounded p-2" />
+      <input type="number" placeholder="Humidity Max" id="new-humidity-max" class="border rounded p-2" />
+      <input type="number" placeholder="Air Temp Min" id="new-air-min" class="border rounded p-2" />
+      <input type="number" placeholder="Air Temp Max" id="new-air-max" class="border rounded p-2" />
+    </div>
+    <div class="flex justify-end mt-6 space-x-2">
+      <button onclick="closeAddPlantForm()" class="px-4 py-2 bg-gray-300 rounded hover:bg-gray-400">Cancel</button>
+      <button onclick="addNewPlantProfile()" class="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700">Save</button>
+    </div>
+  </div>
+</div>
+
 </body>
 </html>
 )rawliteral";
-
-float readWaterTemperature() {
-  int sensorValue = analogRead(WATER_TEMP_PIN);
-  float voltage = sensorValue * (3.3 / 4095.0);
-  return (voltage / 3.3) * 100.0;
+void setupFakeData() {
+  // Set fixed fake data for testing
+  airTemp = 24.5;
+  humidity = 66.7;
+  tds = 573.0;  // This value already appears to be working
+  ec = 1146.0;  // EC = TDS * 2
+  pH = 6.3;
+  waterTemp = 22.4;
+  waterLevel = 78;
+  
+  // Debug output
+  Serial.println("=== FAKE DATA INITIALIZED ===");
+  Serial.println("Air Temp: " + String(airTemp) + "°C");
+  Serial.println("Humidity: " + String(humidity) + "%");
+  Serial.println("TDS: " + String(tds) + " ppm");
+  Serial.println("EC: " + String(ec) + " μS/cm");
+  Serial.println("pH: " + String(pH));
+  Serial.println("Water Temp: " + String(waterTemp) + "°C");
+  Serial.println("Water Level: " + String(waterLevel) + "%");
 }
+void sendToFirebase() {
+  if (WiFi.status() == WL_CONNECTED) {
+    HTTPClient http;
+    String path = String(firebaseHost) + "/logs.json";
+
+    DynamicJsonDocument doc(384); // Increased size
+    doc["temp"] = airTemp;
+    doc["humidity"] = humidity;
+    doc["tds"] = tds;
+    doc["ec"] = ec; // Add EC reading
+    doc["pH"] = pH;
+    doc["waterTemp"] = waterTemp;
+    doc["waterLevel"] = waterLevel;
+
+    // Get current time
+    time_t now = time(nullptr);
+    struct tm* timeinfo = localtime(&now);
+    char timestamp[30];
+    strftime(timestamp, sizeof(timestamp), "%Y-%m-%d %H:%M:%S", timeinfo);
+    doc["timestamp"] = timestamp;
+
+    String jsonStr;
+    serializeJson(doc, jsonStr);
+
+    http.begin(path);
+    http.addHeader("Content-Type", "application/json");
+
+    int httpCode = http.POST(jsonStr);
+    if (httpCode > 0) {
+      Serial.printf("[Firebase] Response: %d\n", httpCode);
+    } else {
+      Serial.printf("[Firebase] Failed: %s\n", http.errorToString(httpCode).c_str());
+    }
+
+    http.end();
+  }
+}
+
 
 // Fixed water level at 67%
 long readWaterLevelPercentage() {
   // Return fixed percentage instead of using ultrasonic sensor
   return 67;
 }
+float readWaterTemperature() {
+  // Take multiple readings to reduce noise
+  const int samples = 20;
+  long sum = 0;
+  
+  for (int i = 0; i < samples; i++) {
+    sum += analogRead(WATER_TEMP_PIN);
+    delay(10);  // Short delay between readings
+  }
+  
+  // Calculate average reading
+  float averageReading = sum / (float)samples;
+  
+  // Convert to voltage (3.3V reference on ESP32)
+  float voltage = averageReading * (3.3 / 4095.0);
+  
+  // Convert voltage to temperature
+  // For a typical 10k NTC thermistor with a 10k series resistor to GND
+  // This is using the Steinhart-Hart equation simplified
+  float resistance = 10000.0 * (3.3 / voltage - 1.0);
+  
+  // Constants for 10k NTC thermistor (adjust these based on your specific thermistor)
+  float A = 0.001129148;
+  float B = 0.000234125;
+  float C = 0.0000000876741;
+  
+  // Steinhart-Hart equation
+  float tempK = 1.0 / (A + B * log(resistance) + C * pow(log(resistance), 3));
+  float tempC = tempK - 273.15;
+  
+  // Apply bounds checking for reasonable water temperature values
+  if (tempC < 0) tempC = 0;
+  if (tempC > 50) tempC = 50;
+  
+  Serial.print("Water Temp ADC: ");
+  Serial.print(averageReading);
+  Serial.print(", Voltage: ");
+  Serial.print(voltage, 3);
+  Serial.print("V, Temp: ");
+  Serial.println(tempC, 2);
+  
+  return tempC;
+}
+float calculateEC(float tds) {
+  // Standard conversion factor: TDS (ppm) = EC (μS/cm) * 0.5
+  // So EC (μS/cm) = TDS (ppm) / 0.5
+  return tds / 0.5;
+
+  
+}
 
 float readTDS() {
   // Temperature compensation coefficient: 0.02 per °C
   float temperatureCoefficient = 1.0 + 0.02 * (waterTemp - 25.0);
+  ec = calculateEC(tds);
   
+  return tds;
   // Take multiple samples
   const int samples = 30;
   long sum = 0;
   for (int i = 0; i < samples; i++) {
     sum += analogRead(TDS_PIN);
     delay(10);
+    
   }
   
   float avgADC = sum / (float)samples;
@@ -1065,14 +1643,14 @@ float pH4Voltage = 3.1;   // Voltage reading when probe is in pH 4 solution
 float pH7Voltage = 2.5;   // Voltage reading when probe is in pH 7 solution
 
 
-float readPH() {
+float readpH() {
   // Take multiple readings to reduce noise
   
   const int samples = 20;
   long sum = 0;
   
   for (int i = 0; i < samples; i++) {
-    sum += analogRead(PH_PIN);
+    sum += analogRead(pH_PIN);
     delay(10);  // Short delay between readings
   }
   
@@ -1116,46 +1694,59 @@ bool dhtReadSuccess = false;
 
 // Replace your updateSensorData function with this improved version
 void updateSensorData() {
-  // Try to read humidity and temperature from DHT22
-  float newHumidity = dht.readHumidity();
-  float newAirTemp = dht.readTemperature();
-  
-  // Check if any reads failed
-  if (isnan(newHumidity) || isnan(newAirTemp)) {
-    Serial.println("Failed to read from DHT sensor!");
+  if (useFakeData) {
+    // Use fake/simulated data instead of reading from sensors
+    // Instead of calling generateFakeData(), let's add small random variations to the existing values
+    ec = calculateEC(tds);
+
+
+    // Add small random variations to simulate sensor changes
+    airTemp += random(-5, 6) / 10.0;  // Small random change by +/- 0.5
+    humidity += random(-5, 6) / 10.0;
+    tds += random(-10, 11);
+    ec = tds * 2.0;  // Keep EC consistent with TDS
+    pH += random(-2, 3) / 10.0;
+    waterTemp += random(-3, 4) / 10.0;
+    waterLevel += random(-2, 3);
     
-    // Check if we've exceeded the timeout
-    if (millis() - lastSuccessfulDHTRead > DHT_READ_TIMEOUT) {
-      Serial.println("DHT sensor read timeout - reinitializing...");
-      dht.begin();  // Try to reinitialize the sensor
-    }
+    // Keep all values in reasonable ranges
+    if (airTemp < 20) airTemp = 20.0;
+    if (airTemp > 30) airTemp = 30.0;
+    if (humidity < 50) humidity = 50.0;
+    if (humidity > 80) humidity = 80.0;
+    if (tds < 300) tds = 300.0;
+    if (tds > 800) tds = 800.0;
+    if (pH < 5.0) pH = 5.0;
+    if (pH > 7.5) pH = 7.5;
+    if (waterTemp < 18) waterTemp = 18.0;
+    if (waterTemp > 28) waterTemp = 28.0;
+    if (waterLevel < 60) waterLevel = 60;
+    if (waterLevel > 95) waterLevel = 95;
     
-    // Use the last known good values or default values
-    if (!dhtReadSuccess) {
-      // If we never had a successful read, use defaults
-      humidity = 33.1;  // Default to 50% humidity
-      airTemp = 22.1;   // Default to 25°CC
+    // Debug output periodically
+    static unsigned long lastDebugOutput = 0;
+    if (millis() - lastDebugOutput > 30000) {  // Output debug data every 30 seconds
+      lastDebugOutput = millis();
       
-      // Add visual indicator to the display
-      // This lets you know you're seeing default values
+      Serial.println("Current fake sensor values:");
+      Serial.println("Air Temp: " + String(airTemp) + "°C");
+      Serial.println("Humidity: " + String(humidity) + "%");
+      Serial.println("TDS: " + String(tds) + " ppm");
+      Serial.println("EC: " + String(ec) + " μS/cm");
+      Serial.println("pH: " + String(pH));
+      Serial.println("Water Temp: " + String(waterTemp) + "°C");
+      Serial.println("Water Level: " + String(waterLevel) + "%");
     }
   } else {
-    // Reading was successful
-    humidity = newHumidity;
-    airTemp = newAirTemp;
-    lastSuccessfulDHTRead = millis();
-    dhtReadSuccess = true;
-    Serial.println("DHT read success: Humidity=" + String(humidity) + "%, Temp=" + String(airTemp) + "°C");
+    // Original sensor reading code for real sensors
+    // [existing code for reading real sensors]
   }
   
-  // Continue with other sensor readings
-  tds = readTDS();
-  waterLevel = readWaterLevelPercentage();
-  pH = readPH();
-  waterTemp = readWaterTemperature();
+  // Update the TFT display with the current values (real or fake)
   lastCheck = millis();
   updateTFTDisplay();
 }
+
 
 // Function to update the TFT display with HydroBrain dashboard UI
 void updateTFTDisplay() {
@@ -1283,7 +1874,8 @@ void handleData() {
   doc["airTemp"] = airTemp;
   doc["tds"] = tds;
   doc["waterLevel"] = waterLevel;
-  doc["ph"] = pH;
+  doc["pH"] = pH;
+  doc["ec"] = ec;
   doc["waterTemp"] = waterTemp;
   doc["ledStatus"] = ledStatus;
   doc["pumpStatus"] = pumpStatus;
@@ -1337,7 +1929,7 @@ void handleToggleLED() {
       break;
   }
   
-  // Make sure to call show() to update the physical LEDs
+  // Make sure to call show() to update the pHysical LEDs
   strip.show();
   
   // Add a small delay to ensure LED update completes
@@ -1372,12 +1964,10 @@ void setup() {
   Serial.begin(115200);
   Serial.println("\n=== HydroBrain System Initializing ===");
   
-  // Initialize SPIFFS for web files
-  if (!SPIFFS.begin(true)) {
-    Serial.println("ERROR: SPIFFS mount failed");
-    return;
+  // Set initial fake data values
+  if (useFakeData) {
+    setupFakeData();
   }
-  
   // List files in SPIFFS to verify
   File root = SPIFFS.open("/");
   File file = root.openNextFile();
@@ -1457,19 +2047,59 @@ void setup() {
   
   WiFi.mode(WIFI_STA);  // Station mode
   WiFi.begin(ssid, password);
-  
-  int attempts = 0;
-  while (WiFi.status() != WL_CONNECTED && attempts < 20) {
-    delay(500);
+
+int attempts = 0;
+while (WiFi.status() != WL_CONNECTED && attempts < 20) {
+  delay(500);
+  Serial.print(".");
+  attempts++;
+}
+
+if (WiFi.status() == WL_CONNECTED) {
+  Serial.println("\nWiFi connected");
+  Serial.println("IP Address: " + WiFi.localIP().toString());
+  tft.print("IP: ");
+  tft.println(WiFi.localIP().toString());
+  delay(2000);  // Show the IP briefly
+  // ✅ مزامنة الوقت بعد التأكد من الاتصال
+  configTime(10800, 0, "pool.ntp.org", "time.nist.gov"); 
+  Serial.println("Waiting for NTP time sync...");
+  server.begin();
+  while (time(nullptr) < 100000) {
     Serial.print(".");
-    attempts++;
+    delay(1000);
   }
+
+  Serial.println("\nTime synced.");
+  time_t now = time(nullptr);
+  Serial.println(ctime(&now));  // ✅ طباعة الوقت بعد المزامنة
+  server.on("/", HTTP_GET, handleRoot);
+  server.on("/data", HTTP_GET, handleData);
+  server.on("/toggle-led", HTTP_GET, handleToggleLED);
+  server.on("/toggle-pump", HTTP_GET, handleTogglePump);
   
-  if (WiFi.status() == WL_CONNECTED) {
-    Serial.println("\nWiFi connected");
-    Serial.print("IP Address: ");
-    Serial.println(WiFi.localIP());
-    
+  // Handle CORS preflight requests
+  server.on("/data", HTTP_OPTIONS, []() {
+    server.sendHeader("Access-Control-Allow-Origin", "*");
+    server.sendHeader("Access-Control-Allow-Methods", "GET, OPTIONS");
+    server.sendHeader("Access-Control-Allow-Headers", "*");
+    server.send(204);
+  });
+  server.on("/toggle-led", HTTP_OPTIONS, []() {
+  server.sendHeader("Access-Control-Allow-Origin", "*");
+  server.sendHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+  server.sendHeader("Access-Control-Allow-Headers", "*");
+  server.send(204, "text/plain", "");
+});
+
+server.on("/toggle-pump", HTTP_OPTIONS, []() {
+  server.sendHeader("Access-Control-Allow-Origin", "*");
+  server.sendHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+  server.sendHeader("Access-Control-Allow-Headers", "*");
+  server.send(204, "text/plain", "");
+});
+} else {
+    Serial.println("\nWiFi connection failed. Time sync skipped.");
     tft.fillScreen(BACKGROUND_COLOR);
     tft.setCursor(50, 90);
     tft.println("WIFI CONNECTED");
@@ -1477,13 +2107,6 @@ void setup() {
     tft.print("IP: ");
     tft.println(WiFi.localIP().toString());
     delay(2000);  // Show the IP briefly
-  } else {
-    Serial.println("\nWiFi connection failed");
-    tft.fillScreen(BACKGROUND_COLOR);
-    tft.setCursor(30, 110);
-    tft.println("WIFI CONNECTION FAILED");
-    delay(2000);
-  }
   
   // Setup server routes
   server.on("/", HTTP_GET, handleRoot);
@@ -1535,7 +2158,6 @@ server.on("/toggle-pump", HTTP_OPTIONS, []() {
   server.serveStatic("/images/", SPIFFS, "/images/", "max-age=86400");
   
   // Start the web server
-  server.begin();
   Serial.println("HTTP server started");
   
   // Initial sensor readings
@@ -1543,44 +2165,59 @@ server.on("/toggle-pump", HTTP_OPTIONS, []() {
   
   Serial.println("=== HydroBrain System Ready ===");
 }
-
+}
 void loop() {
-  // Handle server client requests
   server.handleClient();
-  
-  // Monitor WiFi connection and reconnect if necessary
+
+  // تحديث بيانات Firebase كل 15 دقيقة (تم تصغير الوقت للاختبار إلى دقيقة واحدة)
+  static unsigned long lastFirebaseUpdate = 0;
+  if (millis() - lastFirebaseUpdate > 60000) {
+    Serial.println("Sending data to Firebase...");
+    sendToFirebase();
+    lastFirebaseUpdate = millis();
+  }
+
+  // التحقق من اتصال الواي فاي وإعادة الاتصال عند الانقطاع كل 10 ثواني
   static unsigned long lastWiFiCheck = 0;
-  if (millis() - lastWiFiCheck > 10000) {  // Check every 10 seconds
+  if (millis() - lastWiFiCheck > 10000) {
+    lastWiFiCheck = millis();
     if (WiFi.status() != WL_CONNECTED) {
       Serial.println("WiFi connection lost! Attempting to reconnect...");
-      
-      // Attempt to reconnect
       WiFi.disconnect();
       delay(1000);
       WiFi.begin(ssid, password);
-      
-      // Wait for reconnection with timeout
-      int attempts = 0;
-      while (WiFi.status() != WL_CONNECTED && attempts < 10) {
-        delay(500);
-        Serial.print(".");
-        attempts++;
-      }
-      
-      if (WiFi.status() == WL_CONNECTED) {
-        Serial.println("\nWiFi reconnected successfully");
-        Serial.print("New IP Address: ");
-        Serial.println(WiFi.localIP());
-      }
     }
-    lastWiFiCheck = millis();
   }
-  
-  // Update sensor data periodically
+
+  // تحديث بيانات المستشعرات كل 5 ثواني (أكثر تكرارًا للتحديث السريع للوحة التحكم)
   static unsigned long lastSensorUpdate = 0;
-  if (millis() - lastSensorUpdate > 30000) {  // Every 30 seconds
+  if (millis() - lastSensorUpdate > 5000) {  // Changed from 30000 (30 seconds) to 5000 (5 seconds)
     Serial.println("Updating sensor data...");
     updateSensorData();
     lastSensorUpdate = millis();
   }
+
+static unsigned long pumpStartTime = 0;
+static bool pumpIsRunning = false;
+static unsigned long lastPumpCycle = 0;
+
+if (!pumpIsRunning && millis() - lastPumpCycle >= 3600000UL) {
+  // مرت ساعة، شغل المضخة
+  digitalWrite(WATER_PUMP_PIN, HIGH);
+  pumpStatus = true;
+  pumpStartTime = millis();
+  pumpIsRunning = true;
+  Serial.println("Pump started for 15 minutes.");
+  updateTFTDisplay();
+}
+
+if (pumpIsRunning && millis() - pumpStartTime >= 900000UL) {
+  // مرت 15 دقيقة، طفي المضخة
+  digitalWrite(WATER_PUMP_PIN, LOW);
+  pumpStatus = false;
+  pumpIsRunning = false;
+  lastPumpCycle = millis();
+  Serial.println("Pump stopped after 15 minutes.");
+  updateTFTDisplay();
+}
 }
